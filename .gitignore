@@ -7,3 +7,6 @@
 !/NXFS开发执行表.txt
 !/NXFS开发包/
 !/fs-api-design
+
+# 开发包内的构建产物不入库（兼容层 zig-cache / obj 等）
+NXFS开发包/**/build/
