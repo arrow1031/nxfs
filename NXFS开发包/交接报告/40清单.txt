@@ -1,0 +1,43 @@
+40 流交接清单（给 API/规则流统筹）
+A. 现状事实（可直接引用的锚点）
+项	值
+首次冻结	基线 e558096；跟进 2156cfb（代码）、f982891（文档）
+后续 40 提交	d03a07b（§14.5 登记为 §6 第 6 行）、8b0fe5c（参与合练 + 修 O-1）、687090f（修 §3 越界 + U2-40）
+impl 远端 main	83bb66b（底层后续提交）；我的 687090f 是其祖先，已含在 CI 绿运行内
+meta 指针	1a60b89 → gitlink 687090f（落后于 83bb66b，需其提交者或 API 流按 §5.3 补）
+40 门禁（无争用实测）	build.py 396/0、verify_freeze.py 全通过、check_deps --link-smoke A~F PASS、合练 126/0、run_all.py 三包+合练通过、mutate.py 14/14
+CI	run #29（687090f）：20=225/0、30=781/0、40=396/0；唯一失败=共享夹具 nxfs_fixture.c:36 缺 POSIX 特性宏 → 已由 83bb66b 修，run #32 success
+40 侧行为面变更（U4 用）	① O-1 降级口径（ledger_view.primary_corrupt 置位）② §3 越界修复（改由公开标志推导）③ 新增加性入口 nxfs_meta_object_load_reported()
+B. 待办清单（逐条带归属与验收口径）
+#	事项	归属	验收口径
+B1	U2 的 J6-a：数据簇 CRC 失败经 40 读栈上浮（写进 verify/joint/joint_main.c）	底层/API 流（那是底层文件，40 不写）	用 nxfs_meta_object_load_reported(..., &io)；断言 CORRUPT + io.bad_cluster + io.bad_lba；30 零改动；40 侧能力已就绪并自测（ac40 附加段 8 项断言）
+B2	U3 夹具几何收敛：verify/fixtures/README（若有）指 20 的 TD_*、夹具头用 NXFS_FX_*，两套字面量并存	底层/API 流	收敛为"夹具只声明卷参数（扇区数/簇大小），几何一律经 nxfs_st_geometry_default()"
+B3	U4 第二次冻结	各包自己（40 侧由我或 API 流代笔）	触发=合练收尾；40 在 FREEZE.md §0 追加一节，不覆盖首次冻结事实；内容=O-1 + §3 修复 + U2 入口
+B4	指针账：meta gitlink 跟上 impl 最新（83bb66b 或其后）	推送者（§5.3）或 API 流统一	verify_freeze.py 的"父仓 gitlink == 本仓 HEAD"为硬门禁
+B5	CI 覆盖合练：夹具/基座已收编（U1=a8d1cd9）；run_all.py 缺 run_joint.py 时的"跳过→失败"是否已按 §7 #5 落地	底层/API 流	#32 已绿说明合练已进 CI；建议再确认"缺目录即 FAIL"分支存在（防止退回静默跳过）
+B6	跨包观察项：测试头 guard 撞名	需 API 流裁定后再落地	20 与 40 的 test/test_device.h 曾共用 NXFS_TEST_DEVICE_H（30 用 NXFS_TEST30_DEVICE_H）；同时包含时后者被静默跳过。40 撤掉合练段后已不包含 20 的测试头，故未改；check_deps E 段只扫包根 *.h，test/ 不在范围。建议：E 段扩到 test/，或加"跨包同名头 + 同 guard → FAIL"。注：20 流近期也在改这个文件，请先与它对齐再动
+B7	§14.5(a) 副总账推导单点化（环节2 对齐批次，与 20 同批）	20 侧导出 + 40 侧改调用	40 侧 5 处调用点（ledger.c 读副本/写副本/格式化/双副本比对/写路径兜底）+ 删除 led_secondary_lba()；还清后删 verify/rule_registry.py 的 registered 行；F 段现仍打印该债（ledger.c:264，测试侧独立复算永久允许）
+B8	40 未做/不自行发明（列明以免被误认遗漏）	需裁定后才动	① 目录枚举（FOLDER_LOG 载荷语义属 70/90）② 容量档位变更（布局变更，走对齐批次，需同步 verify_freeze 常量表 + AC-40.8）③ nxfs_meta_txn_commit 的"卷句柄 vs 全局 id 登记"（10-公共约定 §10 未定项，装配层裁定）
+C. 若 API 流要我继续动手，请按此下达（我不自行启动）
+每条指令我按此套路执行：改动清单+影响面 → 只改 40 自己的交付面 → 串行重跑门禁 → 在 §7 记行 → 提交（按路径显式 add）→ 先 impl 后 meta 推送。
+
+动作类型	必须重跑	备注
+改 40-元数据引擎/** 任一（含 test/）	build.py --clean → verify_freeze.py → check_deps.py --link-smoke → run_joint.py → run_all.py --no-clean → mutate.py	FREEZE §4；结果写进 FREEZE §5.6
+纯文档（README/FREEZE）	verify_freeze.py	仍需记 §5.6
+跨包（B6/B7 类）	上述全部 + 对侧门禁	只读消费对方冻结头；不代改别包
+复现/推送命令（供 API 流或我执行时用，本机专用）：
+
+powershell
+复制
+python nxfs-impl\40-元数据引擎\build.py --clean
+python nxfs-impl\40-元数据引擎\verify_freeze.py
+python nxfs-impl\verify\check_deps.py --link-smoke
+python nxfs-impl\verify\joint\run_joint.py
+python nxfs-impl\verify\run_all.py --no-clean
+python nxfs-impl\40-元数据引擎\mutate.py          # 只在干净树上跑
+# 推送：显式 URL + token；先 impl 后 meta；核对用 ls-remote（本地 origin/main 会过期）
+D. 本会话实测的坑（写进统筹纪律更省事）
+同工作区并发构建必假红：实测 UnableToWriteArchive / WinError 5/145；串行即消失（§5.1 已有，这里是第 2、3 个实例）。
+mutate.py 的恢复阶段被打断会留下注入缺陷：已加固为"脏交付面拒绝运行 + 原子写 + 恢复校验 + 报警给 git 恢复命令"（≥ 687090f）；任何流跑变异前请确认脚本版本。
+git add -A 禁用、不代推别流提交、推送后核对必须 ls-remote（本地跟踪引用会过期，会把已推的误报成未推）。
+CI 里夹具/基座的失败会连带把三包的 job 判红（同一 job 串行跑），排查时先看失败点是不是夹具（run #29 即此例：40 本身 396/0）。
