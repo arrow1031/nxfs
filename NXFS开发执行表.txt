@@ -22,6 +22,34 @@
 | 备用量 / 换口味 | `nova-1`、`nova-2` |
 | 智谱付费档 | ⛔ **已耗尽，不可用** |
 
+## 按仓 / 按包的路由
+
+三个仓都在 `F:\Workspace` 下；**默认一律 `deepseek-flash`**，下表只列差异与理由。
+
+| 范围 | 调用 | 说明 |
+| :--- | :--- | :--- |
+| `nxfs`（meta：设计稿 / 开发包 / 执行表） | `deepseek-flash` | 文档与规范修订，改完要校验交叉引用与计数 |
+| `fs-api-design`（`nxfs.h` / `index.d.ts`） | `deepseek-flash` | 改完**必须**跑 verify 全套（C11+C++17+tsc+一致性） |
+| `nxfs-impl` 包 20 兼容层 | `deepseek-flash` | 已有 CI 六阶段验收；改完看 `ghctl.py runs` |
+| `nxfs-impl` 其余包（30/40/50/60/70/80/90/A0/B0） | `deepseek-flash` | 按对应开发包规范实现，落 `nxfs-impl/<编号>-<名>/` |
+| CI 失败排查（读日志） | `glm-4.7-flash`　免费 | 读日志是低难度重复劳动，不值得付费 |
+| 架构裁定 / 跨仓一致性推理 | 充值后单点 `glm-5.3-flash` | **新开短会话**，问完即弃 |
+
+## 本地工具（三仓共用，不在仓库内）
+
+| 工具 | 用途 |
+| :--- | :--- |
+| `gh\ghctl.py` | **GitHub 操作统一入口**：仓库 / secret / deploy key / CI 运行与日志 / 子模块 bump / 同步。**不要再手写 curl** |
+| `gh\gh-auth.ps1` | 凭据管理（Save / Status / Clear / Test） |
+
+```
+python gh\ghctl.py status                                    # 账号 / 额度 / 相关仓库
+python gh\ghctl.py runs arrow1031/nxfs-impl --steps           # CI 结论
+python gh\ghctl.py submodule-bump nxfs-impl --commit --push   # 子仓推送后更新父仓指针
+```
+
+**子仓改动固定流程**：先在子仓提交推送 → `submodule-bump` 更新父仓 gitlink → 推父仓。
+
 ## 上下文纪律（真正的成本杠杆）
 
 1. **一个任务一个会话**；任务完成即归档开新会话——避免上下文无限增长被反复重发。

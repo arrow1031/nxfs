@@ -38,6 +38,23 @@
 
 两者的更新方式相同：**先在子仓提交并推送，再在父仓提交子模块指针（gitlink）变更**。
 
+## 本地开发
+
+指导文件（本地，均不在仓库内或已在仓库内标注）：
+
+| 文件 | 用途 |
+| :--- | :--- |
+| [`NXFS开发包/README.md`](NXFS开发包/README.md) | 开发入口：包清单、构建顺序、环节划分 |
+| [`NXFS开发包/10-公共约定.md`](NXFS开发包/10-公共约定.md) | **全局必读**：常量、错误码、不变量、仓库分工与本地工具 |
+| [`NXFS开发执行表.txt`](NXFS开发执行表.txt) | 模型路由（含上下文纪律，控制额度消耗） |
+| `gh\ghctl.py` + [`gh\README.md`](gh/README.md) | **GitHub 操作统一入口**（仓库 / secret / deploy key / CI 日志 / 子模块 bump）。`gh\` 不在任何仓库内 |
+
+```powershell
+python gh\ghctl.py status                                   # 账号 / 额度 / 三仓状态
+python gh\ghctl.py runs arrow1031/nxfs-impl --steps          # CI 结论
+python gh\ghctl.py submodule-bump nxfs-impl --commit --push  # 子仓推送后更新父仓指针
+```
+
 ## 本仓库不含
 
 - 任何密钥 / 凭据（API key、GitHub token 均在仓库外，已被白名单忽略）

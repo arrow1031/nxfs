@@ -3,6 +3,9 @@
 > 从[设计稿 v0.6](../新文件系统设计稿.txt) 拆解出的**按块开发包**集合。
 > 每个包是自足的：AI 或人只需读**一个包 + 公共约定**即可开工，不必读整份设计稿。
 
+> ⛔ **本目录（meta 仓）只放规范，不放代码。** 实现落在实现仓 `nxfs-impl` 的同编号目录
+> （见各包『交付物』段的「落盘位置」）。在 meta 仓里新建 `.c/.h` 是实现错误。
+
 ---
 
 ## 怎么用（先读这段，能省最多 Token）
@@ -110,6 +113,25 @@ B0 的"三阶段引导流程"、`60` 的"四个动作步状态机"）。
 
 **签名不一致时以 `nxfs.h` 为准**——它是编译期断言验证过的，开发包里的签名只是便于阅读的摘要。
 验收标准（`AC-*`）留在本目录：实现仓的测试逐条对应它们，完成情况在本目录该包内标记 `[x]`。
+
+### 本地工具（三个仓共用）
+
+| 工具 | 用途 |
+| :--- | :--- |
+| `gh\ghctl.py` | **GitHub 操作统一入口**：仓库创建、secret、deploy key、CI 日志、子模块 bump、同步。**不要再手写 curl** |
+| `gh\gh-auth.ps1` | 凭据管理（Save / Status / Clear / Test） |
+| `gh\README.md` | 用法与两个真实坑的说明（中文 JSON、空参数） |
+
+常用（在 `F:\Workspace` 下执行）：
+
+```powershell
+python gh\ghctl.py status                       # 账号 / 额度 / 相关仓库
+python gh\ghctl.py runs arrow1031/nxfs-impl --steps
+python gh\ghctl.py submodule-bump nxfs-impl --commit --push
+```
+
+> 子仓改动流程固定为：**先在子仓提交推送，再 `submodule-bump` 更新父仓指针**。
+> 三个仓都在 `F:\Workspace` 下，`gh\` 目录本身**不在任何仓库内**（白名单忽略）。
 
 ---
 
