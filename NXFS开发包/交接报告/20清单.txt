@@ -71,3 +71,43 @@ _POSIX_C_SOURCE 类坑：严格 -std=c11 下 glibc 只暴露 ISO C 声明（nano
 不跑构建/测试/CI，不推任何仓，不改任何流的文件（含 COORDINATION.md 后续台账）。
 合练目标已暂停（goal … 829bd54ea859，phase=paused），不会自动续跑。
 若需我把本清单落盘（写入 COORDINATION.md 或新建 HANDOVER-API.md 并提交推送），或需要我认领 J6-a 之外的任何一项，给我一句话即可。
+
+================================================================================
+台账增量 · 底层流第二次核对（只读核对，未执行任何构建/测试/推送）
+================================================================================
+时点：统筹侧刷新交接报告与 COORDINATION.md 之后；依据：COORDINATION.md（196 行，20 KB）、
+本目录三份报告（含顶部时点声明）、三份清单、以及仓库现状（git）。
+
+0. 结论：无待办——我名下（底层 / 动作 20）全部项已由统筹侧闭环
+
+| 检查面 | 结论 |
+| 本清单 §4 唯一未完成项（U2 底层侧 J6-a） | 已由「底层/统筹」闭环：COORDINATION.md §7 #16，合练 126 → 146，并用定向变异验证该用例有牙（打掉上浮的 bad_cluster → 145/1，还原复绿）；CI #34 日志中 J6-a RUN+OK |
+| §4.1 未完成项台账 | U1/U2/U3/U4/U5/B2/B6/D1 全部 ✅（D1 已由 API 流裁定：from_secondary == 1 ⇒ 视图与状态都必须置位） |
+| 唯一 ⏳ 项 | D2 / D3（§14.5(a) 推导单点化、§14.5(b) 副本地址上报 MINOR 1.1）——台账明写「环节2 对齐批次、20/40 同批，本轮不做」⇒ 现在做属违例 |
+| D6（meta 子模块指针） | 已闭环：meta gitlink 4fd814a == impl HEAD 4fd814a；meta 与 impl 两仓工作区均干净 |
+| CI | COORDINATION.md §7 #20：run #34（e1abad6）success（自检 21/21、E 段 PASS、30=781/0、40=396/0、J6-a RUN+OK、合练 146/0、对侧平台交叉编译通过、全部包通过） |
+
+1. 防重复提醒（务必遵守，勿重复认领）
+
+- J6-a 已落地于 verify/joint/joint_main.c（统筹侧完成）——本流不再重做。
+- 本流所有权文件已被统筹侧合法改动并留痕，本流不回改、不覆盖：
+  · verify/fixtures/**（POSIX 特性宏守卫、README 补齐「不声明几何」）
+  · verify/joint/**（README、J6-a 用例）
+  · 20-兼容层与安全路径/test/test_device.h（B6：guard 改名 NXFS_TEST20_DEVICE_H；
+    check_deps.py E 段扩到 test/，跨包同名 guard → FAIL）
+
+2. 将来唯一会落到 20 流的事
+
+- D2 / D3 开批时：由 20 的 nxfs_disk_layout.h 导出 nxfs_layout_secondary_ledger_lba()，
+  20 的 2 处调用点（safepath.c:553 解析降级、:655 副引导表 backup_lba）改用它；
+  与 40 的 5 处调用点**同批**改（40 的 led_secondary_lba() 整段删除）；零 ABI 成本。
+  (b) 段 nxfs_safe_ledger_result_t 尾部追加 secondary_lba 属 MINOR 1.1，走 API 仓
+  §13.3 + CHANGELOG + 重打 tag。
+  两者都会触发 20 的 FREEZE.md §5「重跑验收 + 追加变更记录（不覆盖首次冻结）」。
+
+3. 本流现状
+
+- 停手：不跑构建/测试/CI，不推任何仓；无活跃后台作业；合练目标已暂停（goal …829bd54ea859）。
+- 唤醒方式：一句话（例如「D2/D3 开批」或「认领 X」）。
+
+（本节由底层流以只读核对方式追加；本节不含新执行的证据；文件的提交与推送由统筹处理。）
