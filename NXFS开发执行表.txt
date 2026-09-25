@@ -1,0 +1,36 @@
+# NXFS 开发执行表（项目 → 调用）
+#
+# 只做一件事：说明每个项目该调哪个模型。
+# 源配置见 开发AI免费源.txt（本地文件，含密钥，不入仓库）；此处只列"用哪个"。
+#
+# 图例：免费 = 不消耗额度 ｜ 额度 = 消耗资源包/付费 ｜ ⚠ = 高峰易限流
+
+| 项目 | 调用 |
+| :--- | :--- |
+| 一期·环节1　只读最小可跑（20→30→40） | `deepseek-flash` |
+| 一期·环节2　写入路径（40→50→70→60） | `glm-5.3-flash` |
+| 一期·环节3　集成与优化（80→A0→90→B0） | `glm-5.3-flash` |
+| 二期·环节1　NAND 缓存（冻结） | 不调用 |
+| 预研 / 试探性提问 | `glm-4.7-flash`　免费 ⚠ |
+| 看截图 / 读图 | `glm-4.6v-flash`　免费 |
+| 大段生成 / 重活 | `glm-5.3-flash`　额度 |
+| 要即时响应 | `glm-5.3-flashx`　额度 |
+| 备用量 / 换口味 | `nova-1`、`nova-2` |
+
+## 降级规则（只在失败时用）
+
+```
+限流 429 或报错 → 换同系列另一个：glm-5.3-flash ⇄ glm-5.3-flashx
+仍失败          → 换 provider：zhipu → nova-1 → nova-2 → deepseek-flash
+```
+
+## 说明
+
+- `glm-4.7-flash` / `glm-4.6v-flash` 是**免费档**，高峰常 429，不要放在关键路径。
+- `glm-5.3-flash` 与 `glm-5.3-flashx` 是**同一个模型**，后者仅快 2.5 倍、贵 2.5 倍。
+- **Flash 资源包 10 月失效**，重活尽量在期限内走 `glm-5.3-flash`。
+- ⚠️ **两个 `deepseek-flash` 不是一回事**：
+  - 表中环节1 指的是 **DeepSeek 官方**的 `deepseek-flash`（内建 provider `deepseek-official`，
+    也是 DSH 的默认模型——已从 `dsh-base` 配置的 `agent-default-model` 项核实）；
+  - 商汤侧也有一个同名的 `deepseek-flash`（nova-1/nova-2 模型列表里），是另一家托管的。
+  - 选择器里看 **provider 列**区分，别只看模型名。

@@ -1,0 +1,9 @@
+# 白名单式忽略：默认忽略根目录下所有内容，仅放行项目文件。
+# 这样根目录里的工具、临时文件与密钥（.gh-token、开发AI免费源.txt 等）永远不会入库。
+/*
+!/.gitignore
+!/README.md
+!/新文件系统设计稿.txt
+!/NXFS开发执行表.txt
+!/NXFS开发包/
+!/fs-api-design
