@@ -54,7 +54,12 @@
 python gh\ghctl.py status                                   # 账号 / 额度 / 三仓状态
 python gh\ghctl.py runs arrow1031/nxfs-impl --steps          # CI 结论
 python gh\ghctl.py submodule-bump nxfs-impl --commit --push  # 子仓推送后更新父仓指针
+python nxfs-impl\verify\run_all.py                          # 全部实现包验收（含跨包依赖封口前置）
 ```
+
+> **跨包依赖封口**（`10-公共约定.md` §14）：一个源只有一个所有者包，别包的源走
+> `link_only`，**不许复制副本**；聚合构建必须按去重集合编译。机器强制
+> `nxfs-impl\verify\check_deps.py`，已作为 `run_all.py` 的前置阶段（CI 每次都会跑）。
 
 ## 本仓库不含
 

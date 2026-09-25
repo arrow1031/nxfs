@@ -45,8 +45,15 @@
 ```
 python gh\ghctl.py status                                    # 账号 / 额度 / 相关仓库
 python gh\ghctl.py runs arrow1031/nxfs-impl --steps           # CI 结论
+python gh\ghctl.py run-logs arrow1031/nxfs-impl --grep 自检    # 取 CI 日志里的封口证据
 python gh\ghctl.py submodule-bump nxfs-impl --commit --push   # 子仓推送后更新父仓指针
+python nxfs-impl\verify\check_deps.py --link-smoke            # 跨包依赖权属 / 重复编译封口
 ```
+
+> `check_deps.py` 已作为 `verify/run_all.py` 的**前置阶段**（CI 每次都会跑），
+> 平时不必单独执行；**动了依赖声明（`sources` / `link_only` / `includes`）或加了新包时
+> 单独跑一次**。规则见 meta 仓 `NXFS开发包/10-公共约定.md` §14：
+> 一个源只有一个所有者包，别包的源走 `link_only`，**不许复制副本**。
 
 **子仓改动固定流程**：先在子仓提交推送 → `submodule-bump` 更新父仓 gitlink → 推父仓。
 
