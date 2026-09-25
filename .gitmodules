@@ -1,3 +1,6 @@
 [submodule "fs-api-design"]
 	path = fs-api-design
 	url = https://github.com/arrow1031/nxfs-api-design.git
+[submodule "nxfs-impl"]
+	path = nxfs-impl
+	url = https://github.com/arrow1031/nxfs-impl.git
