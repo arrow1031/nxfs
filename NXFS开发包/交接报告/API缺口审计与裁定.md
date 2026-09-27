@@ -539,3 +539,53 @@ nxfs_dir_entry {            /* 变长：头 32 B + name[]（UTF-8，不含 NUL�
 `[32 B 头][条目区][属性槽区]`，头里写明两区偏移与容量，校验逐项查边界
 （magic/版本/`entry_bytes <= entry_cap`/属性区紧邻条目区/不越界）。
 把"偏移算术"收进一处，正是本轮两次踩到"越界/错位 ⇒ 全判 CORRUPT"之后的直接对策。
+
+### 5.13 实现配方（**照抄即用**）：40 的"变更 + 提交 + 失败回滚"
+
+38 行缺口（`file_*`/`dir_*`）唯一剩下的门槛是"与 40 内部编辑/事务机制耦合"。作者已把最短范例
+读通（`40/subvol.c:90` 起），步骤如下 —— **顺序不能变**，回滚不能省。
+
+**配方 A：表项变更型（纯元数据；范例 `nxfs_meta_subvol_create`）**
+```
+nxfs_meta_context_t *ctx = nxfs_meta_ctx_of(volume);      /* 卷句柄 = ctx 指针 */
+nxfs_meta_edit_t edit; nxfs_meta_commit_result_t cres; <entry_t> saved;
+if (ctx == NULL || out_xxx == NULL) return NXFS_ERR_INVALID_HANDLE;
+rc = nxfs_meta_write_allowed(ctx);            if (rc) return rc;      /* 只读/冻结守卫 */
+if (ctx->tables_present == 0u) return NXFS_ERR_RECOVERY_REQUIRED;     /* 表未就位 */
+rc = nxfs_meta_check_name(name, NXFS_META_NAME_BYTES); if (rc) return rc;
+slot = nxfs_meta_table_free_slot_<table>(ctx); if (slot < 0) return NXFS_ERR_NO_SPACE;
+/* 校验父身份/ID 合法性（不造悬空关系） */
+e = &ctx-><table>.entries[slot]; saved = *e;   /* ★ 存旧值（回滚用） */
+memset(e, 0, sizeof(*e));  ... 填字段 ... 同步 head.count / head.next_id ...
+memset(&edit, 0, sizeof(edit)); edit.struct_size = (uint32_t)sizeof(edit);
+nxfs_meta_ledger_edit_from_view(&ctx->ledger, &edit.ledger);   /* 从当前视图派生编辑 */
+edit.ledger.<count> = ctx->ledger.<count> + 1u;
+rc = nxfs_meta_<table>_table_stage(ctx, &edit);                /* 表暂存进编辑 */
+if (rc == NXFS_OK) { edit.bump_volume = 1u;                    /* 整卷结构变更 */
+    memset(&cres, 0, sizeof(cres)); cres.struct_size = (uint32_t)sizeof(cres);
+    rc = nxfs_meta_edit_commit(ctx, &edit, &cres); }           /* ★ 原子提交 */
+if (rc != NXFS_OK) { *e = saved; ctx-><table>.head.next_id = id; return rc; }  /* ★ 回滚 */
+... 填 out（struct_size 先置）...  return NXFS_OK;
+```
+
+**配方 B：对象写入型（要落盘新对象；范例 `snapshot.c` / `subject.c`）**
+1. 取槽/簇：由分配器面申请（`nxfs_meta_alloc_clusters` 一类），失败即回滚；
+2. 组织载荷：目录对象载荷**用已落地的四层**（`dirhead_init` → `dirview_*` 填条目 →
+   `attrs_area_put` 放属性）；载荷必须是 §5.11/§5.12 规定的布局；
+3. `nxfs_meta_object_write_prepared(ctx, ...)` 写入对象（准备好即写，原子性由提交保证）；
+4. 用**配方 A** 提交"父目录主体"的新版本（目录内容变更 = 该 `FOLDER_LOG` 主体的新版本）；
+5. 失败时：**先回滚内存态**（配方 A 的 `*e = saved`），再由提交语义保证盘上无半成品。
+
+**落到具体成员的顺序建议（每步一批、逐批压棘轮）**
+| 批次 | 成员 | 依赖 |
+| :--- | :--- | :--- |
+| ① | `dir_create` | 配方 A + 配方 B（建子目录对象 + 父目录插入条目）；**parent 用卷句柄表示根目录**（设计决定，写进注释） |
+| ② | `file_open` / `file_close` | ①的父目录查找 + §5.9 槽句柄（`slot_alloc`/`slot_free`） |
+| ③ | `dir_enum` | `dirhead_validate` + `dirview_next`（游标来自 `nxfs_dir_enum_options_t`） |
+| ④ | `file_read` / `file_write` / `file_seek` / `file_truncate` | 槽里的 `subject`/`cluster` + 既有对象读写面 |
+| ⑤ | `file_get_attr` / `file_set_attr` / `file_ioctl` | ③的属性槽区 + 新版本提交 |
+| ⑥ | `dir_remove` / `dir_rename` / `dir_link` / `dir_set_program_folder` | ③的墓碑/插条目 + 事务"全有或全无" |
+
+**每批的验收（不可省）**：40 侧正/负用例（留取证标记，否则判据②b 把 05 的登记判红）＋ 05 接线
+＋ 登记表逐条转「已具备」＋ 棘轮只减不增 ＋ `gate_all` 34/34 ＋ CI 绿。
+**注意**：`name_hash`/`fold_eq` 与保留名规则必须复用（不得各自实现第二份）。
