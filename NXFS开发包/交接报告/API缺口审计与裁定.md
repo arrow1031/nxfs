@@ -589,3 +589,62 @@ if (rc != NXFS_OK) { *e = saved; ctx-><table>.head.next_id = id; return rc; }  /
 **每批的验收（不可省）**：40 侧正/负用例（留取证标记，否则判据②b 把 05 的登记判红）＋ 05 接线
 ＋ 登记表逐条转「已具备」＋ 棘轮只减不增 ＋ `gate_all` 34/34 ＋ CI 绿。
 **注意**：`name_hash`/`fold_eq` 与保留名规则必须复用（不得各自实现第二份）。
+
+### 5.14 设计步⑤（**草案，待追认**）：**文件数据布局**
+
+**背景（实测）**：目录层已打通（`dir_create`/`dir_enum`/`dir_remove`/`dir_rename`/`dir_link`），
+而 `file_*` 8 个成员（+ 8 个操作码 = **16 行缺口**）全部卡在"**文件对象长什么样**"。
+本设计沿用**已落地的同一模式**（"载荷头 + 区"，见 §5.11 目录载荷头），使实现成为"照抄目录层"。
+
+**A. 文件对象载荷**（与目录对象同构、同一套 CoW/事务语义）
+```
+[32 B 文件头][数据块链：块头 16 B + 数据 …]
+文件头（nxfs_meta_file_head_t，小端逐字段序列化）：
+  magic      u32   = 'F','I','L','1'（NXFS_META_FILE_MAGIC）
+  version    u32   = 1
+  flags      u32   （bit0 稀疏、bit1 大文件、其余保留）
+  block_kind u32   （0 = 无数据；1 = 常规数据块）
+  first_blk  u32   首数据块簇号（0 = 无数据）
+  block_count u32  数据块数
+  reserved   （补足到 32 B）
+数据块头（每块 16 B）：
+  next_blk  u32  下一块簇号（0 = 末块）
+  used      u32  本块已用字节数
+  flags     u32  （bit0 末块；其余保留）
+  reserved  u32
+```
+
+**B. 权威归属（避免两处记账打架）**
+- `size_bytes` / `alloc_bytes` / `reserved_bytes` / 时间戳 / `link_count`：**以属性记录（§5.12）为权威**
+  （它们正是 API 的 `nxfs_file_attrs_t` 暴露的字段）；
+- 文件头只记**数据结构**（首块、块数、块种类），**不重复记 size**；
+- `file_get_attr` = 读条目属性记录（**不必碰文件头**）；`file_set_attr` = 改属性记录并提交新版本。
+
+**C. 与各成员的对应（照抄目录层的骨架 + §5.13 配方）**
+| 成员 | 做什么 |
+| :--- | :--- |
+| `file_open` | 父目录 `dirview_find(name)` → 取 `subject` → 分配**文件句柄槽**（§5.9）→ 返回 attrs |
+| `file_close` | 释放句柄槽（`generation++`） |
+| `file_read` | 按 `opts->offset/length` 沿块链读（块头 `used` 截断），填 `nxfs_read_result_t` |
+| `file_write` | **新版本对象**：复制受影响块 + 追加/改写 → `txn_stage_write` → 提交；同时更新属性记录 |
+| `file_seek` | 纯计算（`whence` 语义按 API 注释；`NXFS_SEEK_DATA_CLUSTER` 以**簇号**为单位） |
+| `file_truncate` | 截短 ⇒ 释放尾块（**或**记 `size` 缩小 + 尾块 `used` 调整；释放簇归 `reclaim`） |
+| `file_get_attr` | 读属性记录 |
+| `file_set_attr` | 改属性记录（`patch` 语义：仅 mask 中置位字段）+ 提交 |
+| `file_ioctl` | v1 只实现"设备私有控制"的**明确子集**；未知 code ⇒ `NXFS_ERR_NOT_SUPPORTED`（不发明） |
+
+**D. 纪律（本轮已有血的教训，逐条照做）**
+1. 借用 `ctx->obj_scratch` 的路径中，**任何一次"再读对象"都会让前一份缓存失效** ⇒ 需要两份载荷时，
+   目的/次要者放**局部缓冲**（`dir_rename` 的做法）；
+2 结构性修改后**必须写回头部长度/计数**（`entry_bytes` 教训）；
+3. 错误路径**必须 `txn_abort`**；
+4. 凡有 `struct_size` 的出参，**调用方先置尺寸**（CI #127 的间歇性失败就是漏了这一条）；
+5. 每个成员：**正面用例 + 一条有牙负对照**，归属包 `test/` 留取证标记，登记表逐条转「已具备」，
+   棘轮只减不增，`gate_all` 34/34 + CI 绿。
+
+**E. 落地顺序（每步一批）**
+① `file_open` + `file_close`（最小闭环：能开能关）→ ② `file_get_attr` + `file_set_attr`（属性闭环）→
+③ `file_read` + `file_seek`（只读数据路径）→ ④ `file_write` + `file_truncate`（写路径 + CoW）→
+⑤ `file_ioctl`（明确子集）。
+
+> **状态**：**草案，待追认**（与 §5.11/§5.12 一并）；追认前可先做 ①/②（不涉及盘上数据布局的冻结）。
