@@ -243,3 +243,26 @@
 2. `nxfs_query_interface` / `nxfs_library_info` + **61 个成员全非空**（已具备的直接接线；未具备的**如实**返回 `NXFS_ERR_NOT_SUPPORTED`，登记表里保持"未具备"——**不许假装**）；
 3. 逐成员填空：先 `40` 的卷/文件/事务/快照/子卷/主体 → `50` 的窗口 → `30` 的健康/坏道 → `20` 的 L4 → `70`/`90` 的整理 → `D0` 的格式化 → `80` 的数据面；
 4. 每填一批：`E0/build.py` 全绿 → `api_coverage` **缺口下降**（棘轮） → `gate_all` **32/32**（接入 E0 后步数增加） → CI。
+
+### 5.7 E1 接线过程中新发现的两条架构裁定 + 一项 API 缺口（2026-09-28）
+
+这三条是**落地 E1 时实测**出来的，不是纸面推演 —— 它们决定后面约 15 个成员怎么接，故必须先落账。
+
+**裁定一：`30`/`50` 的面对 API 成员是「作用域不匹配」，不得直接别名。**
+- 证据：`30-存储抽象层/storage.h` 自己写明 `nxfs_st_device_health` 是「**`nxfs_api_v1_t::device_health` 的实现面**」，但它吃的是**存储句柄**；而 API 成员给的是**卷句柄**。
+- 而卷句柄在 `40` 里的真实类型是**指向 `nxfs_meta_context_t` 的指针**（`nxfs_meta_ctx_of()` 解引用并校验 `magic` ⇒ 已实测：传未对齐假地址会被 UBSan 抓）。
+- ⇒ 把卷句柄直接喂给 `30`/`50` 是**作用域错误**。**就近原则的结论**：这些成员的**所有者仍是卷的所有者 `40`**，由 `40` 提供"卷作用域包装"（内部取出存储/日志句柄再下传），装配层只转发。
+
+**裁定二：`50` 的窗口面同样不匹配。**
+- `nxfs_journal_window_begin(nxfs_journal_context_t *ctx, const nxfs_journal_window_request_t *req, ...)`：首参是**日志上下文**，而 API 的 `window_begin(volume, opts, out_window_id)` 给的是卷句柄 ⇒ 同裁定一，需 `40` 侧卷作用域包装。
+
+**API 缺口（新发现，属"① 缺口→API"的**第二轮**）：`volume_open` 缺一个"上下文出参/选项"。**
+- `nxfs_api_v1_t::volume_open(opts, out_volume, out_info)` 的 `nxfs_volume_open_options_t` 字段自洽（`device/flags/features/cluster_size/snapshot/subvol/ring_capacity`），**但没有任何位置接收 40 需要的 `nxfs_meta_context_t` 存储**。
+- 装配层若要自己持有它，就得引入**可变全局状态**（违反 `05` 的"零可变全局状态"纪律，也违反 `A0` 的同类纪律）；若每次 `malloc`，又违反"无动态分配"。
+- ⇒ 两条出路，**需拍板**：
+  - **(a) API 补 MINOR（v1.3.0）**：在 `nxfs_volume_open_options_t` **尾部追加** `void *ctx_storage; uint32_t ctx_size;`（尾部追加 = MINOR，不破 ABI）；或新增 `nxfs_query_interface` 之外的 `volume_open_ex`（追加到**函数表尾部**）。
+  - **(b) 显式排除/延后**：把 `volume_open` 登记为「未具备：阻塞于 API 未提供上下文出参」，并写进 §18 的排除册（**不假装已具备**）。
+  **我倾向 (a)**：这与 `nxfs.h` 自己的"热路径零拷贝 / 调用方持游标"风格一致（上下文由调用方给存储），且是**尾部追加**、属 MINOR。
+
+**由此得到的 E2 待办（归 `40`）**：为下列 API 成员在 `40` 侧新增**卷作用域包装面**（各配"正面用例 + 一条有牙负对照"，`40` 测试里留取证标记，否则判据②b 会把 `05` 的登记判红）：
+`device_health` / `bad_sector_report`（→ 30）、`window_begin` / `window_commit` / `window_status`（→ 50）、`boot_table_read`（→ 20 的引导表）、`defrag`（→ 70/90）、`reclaim` / `compact`（→ 60/70）、`fs_check` / `progress_query`（→ 40 自身，见 E2 原清单）。
