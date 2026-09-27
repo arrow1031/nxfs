@@ -463,3 +463,59 @@
 
 **为什么不走 API `_ex` 形态**：那会把实现细节（子上下文类型）漏进对外 ABI；按**就近原则**，
 卷与其子上下文都归 40，API 只暴露卷作用域成员 ⇒ 不扩 API。
+
+### 5.11 设计步③（**草案，待追认**）：名字层与目录日志格式
+
+**为什么必须有这一步（实测依据）**：`40-元数据引擎/开发包.md` 只把"目录内容变更"建模为
+`FOLDER_LOG` 主体的变更，`新文件系统设计稿.txt`（57 KB）里**完全没有**"目录/名字"的盘上格式；
+而缺口里 **38 行**（`file_open/close/read/write/seek/truncate/get_attr/set_attr/ioctl` +
+`dir_enum/create/remove/rename/link` 及其操作码）全都需要"名字 → 对象"的解析。
+⇒ 这不是"接线"也不是"补函数"，而是**先定格式**。
+
+**A. 模型（与既有主体/总账模型一致，不新造机制）**
+1. 目录 = 一个 `NXFS_META_OBJ_FOLDER_LOG` 主体（40 已有该对象种类与 `nxfs_meta_check_name`）。
+2. **目录内容变更 = 该主体的新版本对象**（走既有 `nxfs_meta_edit_commit` + 事务/可见性边界）
+   ⇒ 名字层**天然事务化、天然 CoW**：插入/删除都不原地改，提交后新版本可见。
+3. 查找/枚举都作用在"该主体当前可见版本的目录视图"上（与 `nxfs_meta_subject_read` 的可见性
+   语义一致 ⇒ 提交前读到旧版本 ✓ 与 AC-40 的既有边界不冲突）。
+
+**B. 盘上条目格式（草案）**
+```
+nxfs_dir_entry {            /* 变长：头 32 B + name[]（UTF-8，不含 NUL） */
+    uint16_t name_len;      /* 字节数；0 = 空洞（墓碑占位） */
+    uint16_t flags;         /* bit0 墓碑、bit1 目录、bit2 程序文件夹、其余保留 */
+    uint32_t name_hash;     /* 大小写折叠后的 FNV-1a 32（快速筛） */
+    uint32_t object_cluster;/* 目标对象簇（0 = 墓碑） */
+    uint32_t attrs_slot;    /* 属性槽（file_attrs 的存放位置） */
+    nxfs_subject_t subject; /* 目标对象主体（40 B，随条目一起，便于免二次解析） */
+    /* uint8_t name[name_len]; 4 字节对齐填充 */
+}
+```
+- **名字规则**：UTF-8；长度 ≤ `NXFS_META_NAME_BYTES`；保留名与**大小写折叠**沿用包 40 现有
+  规则（`AC-40` 已要求"带扩展名的保留名也拒绝"、"保留名不分大小写" ⇒ 折叠只用于比较/哈希，
+  **不改变存储的原始字节**）。
+- **墓碑**：删除只把 `name_len=0`/`object_cluster=0`（保留 `name_hash` 供重写时清理），
+  当墓碑比例超过阈值（建议 25%）或条目数超过单簇容量时**整体重写**该目录对象（依旧是新版本）。
+- 单簇放不下 ⇒ 目录对象支持"链式扩展块"（同 `NXFS_META_OBJ_*` 既有的扩展约定，实现时对齐）。
+
+**C. 与 API 的对应（逐条，避免"实现有而 API 无"或反之）**
+| API 成员 | 用到的名字层动作 |
+| :--- | :--- |
+| `file_open` | 在父目录视图里按 `name_hash` + 折叠名比对 → 取 `subject`/`object_cluster` → 取槽句柄（§5.9） |
+| `dir_create` | 生成子目录主体 + 插入条目 + 提交（新版本） |
+| `dir_enum` | 遍历可见版本条目（跳过墓碑），按 `nxfs_dir_enum_options_t` 的游标续读 |
+| `dir_remove` | 打墓碑（`mark_only` 语义）或连带删除子树（`recursive`） |
+| `dir_rename` | 目标目录插入 + 源目录打墓碑（**同一事务**，保证不会"两边都在"或"两边都无"） |
+| `dir_link` | 插入条目指向既有 `subject`（硬链接）或写符号链接载荷（`symbolic`） |
+| `file_get_attr`/`file_set_attr` | 读/写该条目的 `attrs_slot`（`set_attr` 产新版本） |
+| `file_read`/`file_write`/`file_seek`/`file_truncate` | 句柄槽里的 `cluster`/`subject` + 既有对象读写面 |
+| `dir_set_program_folder` | 改条目 `flags` 的 bit2（并 `propagate` 到子树） |
+
+**D. 验收与纪律（实现该层时逐条照做）**
+- 每成员：正面用例 + **一条有牙负对照**（例：大小写折叠不得让两个不同名字互相覆盖；
+  墓碑不得被 `dir_enum` 返回；`dir_rename` 的事务语义必须"全有或全无"）；
+- 归属包 `test/` 必须留**取证标记**，否则判据②b 会把 `05` 的登记判红；
+- 登记表逐条转「已具备」，**棘轮只减不增**；每批 `gate_all` 34/34 + CI 绿；
+- 盘上格式一旦落地即冻结（格式版本族 `NXFS_FORMAT_VERSION_META` 若变更需按 §14.3 加性纪律处理）。
+
+> **状态**：**草案，待上级追认**（已登记到 `待追认清单.md`）。追认前不写实现。
