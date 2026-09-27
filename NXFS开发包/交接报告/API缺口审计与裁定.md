@@ -416,3 +416,50 @@
 | `subject_invalidate` | 函数表成员 | 80-翻译层与热缓存 | 未装配 |
 | `info` | 函数表成员 | A0-Windows集成层 | 未装配 |
 
+### 5.9 设计步①：`40` 的**对象句柄空间**（E2 核心的前置，解锁 `file_*`/`dir_*` 约 40 行）
+
+**现状与缺口（实测）**：API 的 `file_open`/`dir_create` 等要返回/接收 `nxfs_handle_t`，而 40 目前
+**只有卷句柄**（= `nxfs_meta_context_t *`，`nxfs_meta_ctx_of()` 解引用校验 `magic`）；40 的对象层
+（`nxfs_meta_object_load/write_prepared`）是**按簇号**工作的，没有"打开着的文件/目录"概念。
+⇒ 直接写 `file_open` 会立刻撞上"句柄从哪来"。
+
+**约束**（40 的既有纪律，不得破）：零动态分配；上下文与暂存区**由调用方提供内存**；句柄必须是
+不透明值（可安全跨 API 边界）；一个实现点只此一处（§14）。
+
+**设计（加性、与卷句柄同构）**：
+1. `nxfs_meta_context_t` **尾部追加**（包内布局变更，调用方需重编，属包内 MINOR）：
+   `nxfs_meta_handle_slot_t *handle_slots; uint32_t handle_capacity; uint32_t reserved4;`
+   —— 存储由**调用方**提供（与 `stage_memory`/`obj_scratch` 同一手法），容量由调用方按需给。
+2. 句柄编码 = **指向槽的指针**（与卷句柄同风格）；槽结构建议：
+   `{ uint64_t magic; uint32_t kind; /* FILE | DIR */ uint32_t flags; nxfs_subject_t subject;
+      nxfs_cluster_t object_cluster; uint64_t generation; }`
+   —— `magic` 用**与卷上下文不同的常量**，这样 `nxfs_meta_slot_of()` 与 `nxfs_meta_ctx_of()`
+   能互相分辨（判错即拒，不得解引用未对齐地址：E1 已实测过 UBSan 抓过这种错）。
+3. 分配/释放：`file_open`/`dir_create` 取一个**空闲槽**（generation 为 0 或已释放）；
+   `file_close` 释放并把 `generation++` ⇒ 旧句柄因 generation/magic 不符被拒（防悬垂复用）。
+   容量耗尽 ⇒ 明确返回"资源不足"类错误，**不得**退化成动态分配。
+4. 句柄生命周期与卷绑定：槽内记录所属卷的 ctx（或在 `slot_of` 里校验卷一致），避免跨卷误用。
+
+**随之要补齐的 40 侧面（E2 子批，逐个配"正面用例 + 有牙负对照"）**：
+`nxfs_meta_file_open` / `_file_close` / `_file_read` / `_file_write` / `_file_seek` /
+`_file_truncate` / `_file_get_attr` / `_file_set_attr` / `_file_ioctl`、
+`nxfs_meta_dir_create` / `_dir_enum` / `_dir_remove` / `_dir_rename` / `_dir_link`、
+以及**名字层**（父目录日志的插入/删除/查找 —— 目前 40 的对象层没有名字路径，需先确认
+`NXFS_META_OBJ_FOLDER_LOG` 的读写是否已具备可复用的"名字 → 对象"路径）。
+
+**验收与纪律**：每子批 = 40 侧实现 + 正/负用例（留取证标记，否则判据②b 会把 05 的登记判红）
++ 05 接线 + 登记表逐条转「已具备」+ 棘轮只减不增 + `gate_all` 34/34。
+
+### 5.10 设计步②：`40` 的**per-volume 子上下文**（解锁 `window_*` 与 80 侧缓存面）
+
+**现象**：50 的窗口面吃 `nxfs_journal_context_t *`、80 的缓存面吃缓存句柄，而 API 成员只给
+**卷句柄** ⇒ 装配层没有任何合法位置安放这些子上下文（自持 = 可变全局 ✗；malloc ✗）。
+
+**设计**（同样是"调用方提供内存 + 卷的所有者持有"，与 §5.9 同一手法）：
+在 `nxfs_meta_context_t` **尾部追加** `nxfs_journal_context_t *journal;` 等子上下文指针（按需逐个加），
+由调用方在挂载前提供内存、由 50 的 `journal_*` 面在挂载期初始化；此后 40 提供**卷作用域包装**：
+`nxfs_meta_window_begin/commit/status(volume, ...)` 内部取出 `ctx->journal` 再转发 50，
+装配层只接线不重写（§5.7 裁定一/二）。
+
+**为什么不走 API `_ex` 形态**：那会把实现细节（子上下文类型）漏进对外 ABI；按**就近原则**，
+卷与其子上下文都归 40，API 只暴露卷作用域成员 ⇒ 不扩 API。
