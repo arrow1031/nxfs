@@ -266,3 +266,153 @@
 
 **由此得到的 E2 待办（归 `40`）**：为下列 API 成员在 `40` 侧新增**卷作用域包装面**（各配"正面用例 + 一条有牙负对照"，`40` 测试里留取证标记，否则判据②b 会把 `05` 的登记判红）：
 `device_health` / `bad_sector_report`（→ 30）、`window_begin` / `window_commit` / `window_status`（→ 50）、`boot_table_read`（→ 20 的引导表）、`defrag`（→ 70/90）、`reclaim` / `compact`（→ 60/70）、`fs_check` / `progress_query`（→ 40 自身，见 E2 原清单）。
+### 5.8 缺口清算表（机械生成：按**归属 + 阻塞分类**）
+
+> 生成自 `nxfs-impl/verify/api-coverage.md`，当前非「已具备」行 **109** 条。
+> 判据 (a) 要求「每条对外面要么有实现、要么显式登记明确排除/延后」——本表即那份登记。
+> 分类规则写在 `F:\Workspace\.tools\emit_gap_plan.py`（可复核、可重跑）。
+
+#### R1 需**真实现**（51 条）
+
+| 面 | 类别 | 归属包 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `NXFS_OP_DIR_CREATE` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_DIR_ENUM` | 操作码 | 40-元数据引擎 | 未具备 |
+| `NXFS_OP_DIR_LINK` | 操作码 | 40-元数据引擎 | 未具备 |
+| `NXFS_OP_DIR_REMOVE` | 操作码 | 40-元数据引擎 | 未具备 |
+| `NXFS_OP_DIR_RENAME` | 操作码 | 40-元数据引擎 | 未具备 |
+| `NXFS_OP_FILE_CLOSE` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_FILE_GET_ATTR` | 操作码 | 40-元数据引擎 | 未具备 |
+| `NXFS_OP_FILE_IOCTL` | 操作码 | 40-元数据引擎 | 未具备 |
+| `NXFS_OP_FILE_OPEN` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_FILE_READ` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_FILE_SEEK` | 操作码 | 40-元数据引擎 | 未具备 |
+| `NXFS_OP_FILE_SET_ATTR` | 操作码 | 40-元数据引擎 | 未具备 |
+| `NXFS_OP_FILE_TRUNCATE` | 操作码 | 40-元数据引擎 | 未具备 |
+| `NXFS_OP_FILE_WRITE` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_FS_CHECK` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_PROGRESS_QUERY` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_TXN_BEGIN` | 操作码 | 40-元数据引擎 | 未装配 |
+| `dir_create` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `dir_enum` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `dir_link` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `dir_remove` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `dir_rename` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `file_close` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `file_get_attr` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `file_ioctl` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `file_open` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `file_read` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `file_seek` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `file_set_attr` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `file_truncate` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `file_write` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `fs_check` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `progress_query` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `txn_begin` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_CHECKPOINT` | 操作码 | 50-日志体系与恢复 | 未装配 |
+| `NXFS_OP_EVENT_ACK` | 操作码 | 50-日志体系与恢复 | 未具备 |
+| `NXFS_OP_EVENT_DRAIN` | 操作码 | 50-日志体系与恢复 | 未具备 |
+| `checkpoint` | 函数表成员 | 50-日志体系与恢复 | 未装配 |
+| `event_ack` | 函数表成员 | 50-日志体系与恢复 | 未装配 |
+| `event_drain` | 函数表成员 | 50-日志体系与恢复 | 未装配 |
+| `NXFS_OP_COMPACT` | 操作码 | 70-文件块与分配 | 未装配 |
+| `NXFS_OP_DEFRAG` | 操作码 | 70-文件块与分配 | 未装配 |
+| `NXFS_OP_RECLAIM` | 操作码 | 70-文件块与分配 | 未装配 |
+| `compact` | 函数表成员 | 70-文件块与分配 | 未装配 |
+| `defrag` | 函数表成员 | 70-文件块与分配 | 未装配 |
+| `reclaim` | 函数表成员 | 70-文件块与分配 | 未装配 |
+| `batch_open` | 函数表成员 | 80-翻译层与热缓存 | 未装配 |
+| `NXFS_OP_DIR_SET_PROGRAM_FOLDER` | 操作码 | 90-程序文件夹优化 | 未装配 |
+| `dir_set_program_folder` | 函数表成员 | 90-程序文件夹优化 | 未装配 |
+| `NXFS_OP_VOLUME_FORMAT` | 操作码 | D0-卷与分区管理 | 未装配 |
+| `volume_format` | 函数表成员 | D0-卷与分区管理 | 未装配 |
+
+#### R2 架构阻塞（4 条）
+
+| 面 | 类别 | 归属包 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `volume_open` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `window_begin` | 函数表成员 | 50-日志体系与恢复 | 未装配 |
+| `window_commit` | 函数表成员 | 50-日志体系与恢复 | 未装配 |
+| `window_status` | 函数表成员 | 50-日志体系与恢复 | 未装配 |
+
+#### R3 架构阻塞（2 条）
+
+| 面 | 类别 | 归属包 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `txn_abort` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `txn_commit` | 函数表成员 | 40-元数据引擎 | 未装配 |
+
+#### R4 随批 2（4 条）
+
+| 面 | 类别 | 归属包 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `NXFS_FORMAT_VERSION_DISK` | 格式版本常量 | 20/30/40/50 各一份 | 未对齐 |
+| `NXFS_FORMAT_VERSION_JOURNAL` | 格式版本常量 | 20/30/40/50 各一份 | 未对齐 |
+| `NXFS_FORMAT_VERSION_META` | 格式版本常量 | 20/30/40/50 各一份 | 未对齐 |
+| `NXFS_FORMAT_VERSION_STORAGE` | 格式版本常量 | 20/30/40/50 各一份 | 未对齐 |
+
+#### R4 随装配层（4 条）
+
+| 面 | 类别 | 归属包 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `NXFS_CAP_*` | 能力位（族） | （家族，见判据①计数） | 未装配 |
+| `NXFS_FEATURE_*` | 特性位（族） | （家族，见判据①计数） | 未装配 |
+| `NXFS_FORMAT_*` | 格式化标志位（族） | （家族，见判据①计数） | 未装配 |
+| `NXFS_VOLATTR_*` | 卷属性位（族） | （家族，见判据①计数） | 未装配 |
+
+#### R5 延后（7 条）
+
+| 面 | 类别 | 归属包 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `NXFS_OP_BOOT_TABLE_READ` | 操作码 | 20-兼容层与安全路径 | 未装配 |
+| `boot_table_parse` | 函数表成员 | 20-兼容层与安全路径 | 未装配 |
+| `boot_table_read` | 函数表成员 | 20-兼容层与安全路径 | 未装配 |
+| `NXFS_OP_BOOT_HANDOVER` | 操作码 | B0-EFI只读驱动 | 未装配 |
+| `NXFS_OP_BOOT_STAGE` | 操作码 | B0-EFI只读驱动 | 未装配 |
+| `boot_handover` | 函数表成员 | B0-EFI只读驱动 | 未装配 |
+| `boot_stage` | 函数表成员 | B0-EFI只读驱动 | 未装配 |
+
+#### R6 待分类（37 条）
+
+| 面 | 类别 | 归属包 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `NXFS_OP_SAFE_BOOT_TABLE_PARSE` | 操作码 | 20-兼容层与安全路径 | 未装配 |
+| `NXFS_OP_SAFE_EVENT_APPEND` | 操作码 | 20-兼容层与安全路径 | 未装配 |
+| `NXFS_OP_SAFE_KERNEL_READ` | 操作码 | 20-兼容层与安全路径 | 未装配 |
+| `NXFS_OP_SAFE_LEDGER_PARSE` | 操作码 | 20-兼容层与安全路径 | 未装配 |
+| `NXFS_OP_SAFE_SECTOR_READ` | 操作码 | 20-兼容层与安全路径 | 未装配 |
+| `NXFS_OP_SAFE_SECTOR_WRITE` | 操作码 | 20-兼容层与安全路径 | 未装配 |
+| `NXFS_OP_SAFE_VERIFY` | 操作码 | 20-兼容层与安全路径 | 未装配 |
+| `event_append` | 函数表成员 | 20-兼容层与安全路径 | 未装配 |
+| `kernel_read` | 函数表成员 | 20-兼容层与安全路径 | 未装配 |
+| `ledger_parse` | 函数表成员 | 20-兼容层与安全路径 | 未装配 |
+| `sector_read` | 函数表成员 | 20-兼容层与安全路径 | 未装配 |
+| `sector_write` | 函数表成员 | 20-兼容层与安全路径 | 未装配 |
+| `verify_crc32c` | 函数表成员 | 20-兼容层与安全路径 | 未装配 |
+| `NXFS_OP_SNAPSHOT_CLONE` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_SNAPSHOT_CREATE` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_SNAPSHOT_DESTROY` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_SNAPSHOT_LIST` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_SUBJECT_HANDOVER` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_SUBVOL_CREATE` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_SUBVOL_DESTROY` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_SUBVOL_LIST` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_TXN_ABORT` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_TXN_COMMIT` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_VOLUME_CLOSE` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_VOLUME_FLUSH` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_VOLUME_OPEN` | 操作码 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_VOLUME_QUERY` | 操作码 | 40-元数据引擎 | 未装配 |
+| `snapshot_clone` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `subject_handover` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `volume_flush` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `volume_query` | 函数表成员 | 40-元数据引擎 | 未装配 |
+| `NXFS_OP_WINDOW_BEGIN` | 操作码 | 50-日志体系与恢复 | 未装配 |
+| `NXFS_OP_WINDOW_COMMIT` | 操作码 | 50-日志体系与恢复 | 未装配 |
+| `NXFS_OP_WINDOW_STATUS` | 操作码 | 50-日志体系与恢复 | 未装配 |
+| `NXFS_OP_SUBJECT_INVALIDATE` | 操作码 | 80-翻译层与热缓存 | 未装配 |
+| `subject_invalidate` | 函数表成员 | 80-翻译层与热缓存 | 未装配 |
+| `info` | 函数表成员 | A0-Windows集成层 | 未装配 |
+
