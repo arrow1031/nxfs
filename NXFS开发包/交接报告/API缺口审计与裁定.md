@@ -648,3 +648,42 @@ if (rc != NXFS_OK) { *e = saved; ctx-><table>.head.next_id = id; return rc; }  /
 ⑤ `file_ioctl`（明确子集）。
 
 > **状态**：**草案，待追认**（与 §5.11/§5.12 一并）；追认前可先做 ①/②（不涉及盘上数据布局的冻结）。
+
+#### 5.14.1 补记（**定稿，待追认**）：数据归属 —— **对象载荷内**，独立簇留作大文件扩展
+
+**歧义**：原稿同时写了"`[32 B 头][数据块链]`"与文件头里的 `first_blk`（首数据块簇号），
+读者无法判断数据放在哪。**定稿如下**：
+
+1. **v1 数据放对象载荷内**（与目录对象"载荷头 + 区"完全同构）：
+   `[32 B 文件头][块链：块头 16 B + 数据…]`，**不分配独立簇**。
+   好处：与既有 CoW/事务路径**零新增机制**（`nxfs_meta_txn_stage_write` 直接写整个载荷）、
+   可立即用现有测试夹具验证；`first_blk` 字段**保留为 0**，语义定为"载荷内布局"。
+2. **上限**：单次提交的载荷受 `ctx->obj_scratch_bytes` 限制（40 实现里按它校验）。
+   超过上限的写 ⇒ **如实 `NXFS_ERR_NOT_SUPPORTED`**（大文件/独立簇属**后续批次**：
+   届时 `first_blk` 生效、块链搬到独立簇、属性 `alloc_bytes` 反映真实分配）。
+3. **属性仍为权威**：`size_bytes`/`alloc_bytes` 写在**属性记录**里（§5.12/§5.14 B 节）；
+   写路径必须**同时**更新载荷（数据）与属性记录（size/时间），且**一个事务**提交两个主体
+   （父目录 + 文件对象）—— 与 `dir_create` 的"父子同事务"同一手法。
+
+**`file_write` 实现配方（照抄即用）**
+```
+nxfs_meta_file_write(volume, opts, out):
+  1) 守卫：ctx / write_allowed / tables_present / opts / out / segments 非空
+     · opts->verify != NXFS_VERIFY_NONE        ⇒ NOT_SUPPORTED（无校验实现）
+     · slot = slot_of(opts->handle) 且 kind == FILE，否则 INVALID_HANDLE
+     · slot->has_parent == 0                    ⇒ NOT_SUPPORTED（无法写属性）
+     · opts->offset + 总长 > 载荷上限            ⇒ NOT_SUPPORTED（大文件留后续批次）
+  2) 取旧载荷：subject_read(volume, &slot->subject, fbuf, cap, &got, &gen)
+     · 用**局部缓冲**（不要用 obj_scratch，因为第 4 步还要用它装父目录载荷！）
+  3) 组装新载荷：filehead_init 或沿用旧头 → 按 offset 覆盖/追加块（块头 used 更新）
+     → 头里 block_count/（保留 first_blk = 0）
+  4) 父目录属性：dir_load(parent → obj_scratch) → attrs_area_get(slot->attrs_slot)
+     → 改 size_bytes/alloc_bytes/modified_ns → attrs_area_put
+  5) 一个事务：txn_begin → stage_write(父目录载荷, FOLDER_LOG)
+             → stage_write(新文件载荷, OBJ_FILE) → txn_commit
+     · 任一步失败 ⇒ **txn_abort**（教训）
+  6) 出参：out->{struct_size, bytes_written}；affected = 父目录主体（+ 文件主体）
+```
+**测试要点（有牙）**：写入后再 `file_read` 必须**读回同样字节**（此前 `file_read` 只在尺寸 0 时可用，
+本批落地后"尺寸 > 0"分支同时变真 ⇒ **两处互相验证**）；越界 offset 追加语义；超上限 ⇒ `NOT_SUPPORTED`；
+坏句柄/目录句柄 ⇒ `INVALID_HANDLE`。
