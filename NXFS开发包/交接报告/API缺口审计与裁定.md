@@ -687,3 +687,46 @@ nxfs_meta_file_write(volume, opts, out):
 **测试要点（有牙）**：写入后再 `file_read` 必须**读回同样字节**（此前 `file_read` 只在尺寸 0 时可用，
 本批落地后"尺寸 > 0"分支同时变真 ⇒ **两处互相验证**）；越界 offset 追加语义；超上限 ⇒ `NOT_SUPPORTED`；
 坏句柄/目录句柄 ⇒ `INVALID_HANDLE`。
+
+### 5.15 设计步⑥（**草案，待追认**）：**事件与检查点子系统的卷绑定**
+
+**现状（已排查，别重复摸索）**：
+· 50 包**已有** `nxfs_journal_checkpoint_begin` / `_set_interrupt` / `_step`（`50/checkpoint.c`），
+  其状态放在**调用方自己持有的** `nxfs_journal_context_t` 里 —— 50 的风格是"**状态进来、由调用方拥有**"；
+· 但**没有任何地方**把 `nxfs_journal_context_t` 与**卷**（40 的 `nxfs_meta_context_t`）绑起来，
+  也没有事件队列的契约 ⇒ 所以 `checkpoint`/`event_drain`/`event_ack` 三个面**无处落脚**。
+
+**设计（沿用 50 的既有风格，不新造机制）**：
+
+1. **归属**：40 的卷上下文（`nxfs_meta_context_t`）**加性追加**：
+   ```
+   nxfs_journal_context_t journal;        /* 卷绑定的日志/检查点状态（50 的类型） */
+   uint32_t               journal_ready;  /* 1 = 已初始化（挂载时建立） */
+   nxfs_meta_event_t      events[NXFS_META_EVENT_RING];   /* 卷内事件环（见第 3 条） */
+   uint32_t               ev_head, ev_tail, ev_dropped;
+   uint64_t               ev_next_token;  /* ack 令牌单调递增 */
+   ```
+   **理由**：卷句柄由 40 拥有（`nxfs_meta_ctx_of`），50 的函数本来就是"传 ctx 进来"⇒ 绑定只需
+   在 40 的 ctx 里**放一个 50 的实例**，无需新注册表、无需全局单例（也符合"零可变全局"纪律）。
+2. **生命周期**：`journal_ready` 在**建表/挂载成功**时置 1（`tables_present` 之后），
+   在 `volume_close`/降级路径置 0；**不在只读挂载上初始化**（避免只读卷写状态）。
+3. **事件环契约（`event_drain`）**：
+   · `nxfs_meta_event_drain(volume, opts, out)`：从 `ev_head` 起把至多 `opts->max_events` 条**拷贝**到
+     调用方数组；返回 `out->{count, dropped, more, token}`；**token = `ev_next_token`**（调用方持它来 ack）；
+   · `NXFS_META_EVENT_RING` 定为 64（编译期常量）；环满 ⇒ `ev_dropped++` 并**推进 head**（丢最旧），
+     如实上报 `dropped`（**不假装没丢**）；
+   · `nxfs_meta_event_ack(volume, token)`：`token` 必须 `<= ev_next_token` 且 `> 上一个已 ack 的 token`
+     ⇒ 把 `ev_tail` 前移到该 token 对应的位置并 `ev_next_token++`；未知/回退 token ⇒ `NXFS_ERR_NOT_FOUND`
+     （**不回绕、不猜**）。
+4. **`checkpoint` 面**：`nxfs_meta_checkpoint(volume, opts, progress)` ⇒ 转调 50 的
+   `nxfs_journal_checkpoint_begin` + `_step`（循环到 `out->more == 0`），把 50 的
+   `nxfs_checkpoint_report_t` 映射到 `nxfs_progress_t`（`opcode = NXFS_OP_CHECKPOINT`）；
+   `opts->scope` 若为 0 走默认；`journal_ready == 0` ⇒ 如实 `NXFS_ERR_NOT_SUPPORTED`（不做无状态假检查点）。
+5. **事件生产者**：本设计**只建契约与队列**；真正的生产者（提交/恢复/坏簇/降级等）随各子系统接入，
+   接入前 `event_drain` 返回 **空 + 有效 token**（这是诚实状态，不是空实现）。
+6. **验收纪律**（照既有惯例）：每面**独立测试函数 + 自挂干净卷**；正面 + **一条有牙**；
+   `05` 侧：`event_drain`/`event_ack`/`checkpoint` 三个 API 成员**自带 volume** ⇒ 直接别名或薄适配器；
+   登记表逐条转「已具备」（**必须有 40/50 的取证标记**），棘轮只减不增，`gate_all` 34/34 + CI 绿。
+
+> **状态**：**草案，待追认**（与 §5.11–§5.14.1 一并）。追认前**不要**在 05 里凭空实现这三面
+> （否则又是"无落点的空实现"，会污染判据②b 的取证语义）。
