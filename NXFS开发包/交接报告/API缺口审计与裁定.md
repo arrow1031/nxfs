@@ -785,3 +785,27 @@ nxfs_meta_file_write(volume, opts, out):
    且 A0 不在宿主门禁内 ⇒ **不推荐**（与审计 §5.6 的同类裁定一致）。
 
 **当前状态**：登记为「延后」（理由见上表），棘轮由 10 削到 8（本行 + 其操作码行）。
+
+## §5.17 `reclaim` / `compact` / `defrag` 的实现阻塞与裁定（2026-09-28，证据链）
+
+**结论：三面显式登记「延后」**（阻塞**不在 70 的算法**，而在**缺"簇状态通道"**——与 §5.16 的"设备通道"同类）。
+
+| # | 事实 | 位置 |
+| :-: | :--- | :--- |
+| 1 | `nxfs_reclaim_request_t` 必填 `nxfs_cluster_state_t *states`（原文注释：「簇状态表；索引 = 簇号」） | `70-文件块与分配/nxfs_block_alloc.h:204-228` |
+| 2 | `nxfs_defrag_block()` 的 `old_block_states`（「旧块占用表（in/out）」）同一口径 | 同上 `:373` |
+| 3 | 状态机 `FREE(0)/DELAYED(1)/USED(2)`，单向迁移 `USED --(批量回收)--> DELAYED --(释放条件满足)--> FREE` | 同上 `:120-131` |
+| 4 | 40↔分配器契约是**只写**的两个回调 `alloc_clusters`/`free_clusters`，**无"枚举/读取簇状态"操作** | `40-元数据引擎/meta.h:142-144` |
+| 5 | 总账公开面 `load/read_copy/commit/repair/verify/format`，**无占用表/簇映射访问器**（`bitmap_*` 是 30 的坏扇区位图契约） | `40-元数据引擎/meta.h:860-877` |
+| 6 | 具体分配器在集成层，映射藏在 `host.cookie` 之后，无枚举面 | `D0-卷与分区管理/d0_mkfs.c:223`、`nxfs_image.c:227` |
+| 7 | API 选项只有阈值字段（`waste_threshold`/`stale_days`/`stale_use_threshold`/`fragment_threshold`/`allow_*`/`wait`），无状态通道 | `fs-api-design/nxfs.h` |
+
+**裁定**：70 的**算法面已具备**（`nxfs_reclaim_extents` / `nxfs_defrag_block` / `nxfs_block_frag_permille` /
+`nxfs_defrag_trace_order_ok` / `nxfs_defrag_state_consistent` 等纯逻辑入口）。三条可选修法（待上级追认）：
+
+1. **扩分配器契约**（推荐）：在 40↔分配器回调里新增 `query_states(cookie, first, count, states[])`，
+   由 40 以卷作用域暴露（`nxfs_meta_alloc_query_states(volume, ...)`），`05` 取表后调 70 规划；
+2. **总账暴露占用表**：`nxfs_meta_ledger_cluster_states(ctx, ...)`（占用表本就是总账的一部分）；
+3. **API 尾部追加"状态提供者"通道**（调用方传表）——与 §5.16 的第 1 条同构。
+
+**当前状态**：登记为「延后」（理由见上表），棘轮由 8 削到 2（三面 + 其三个操作码行）。
