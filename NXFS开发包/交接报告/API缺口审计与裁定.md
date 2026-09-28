@@ -759,3 +759,29 @@ nxfs_meta_file_write(volume, opts, out):
 · 测试：独立函数 + 自挂干净卷（沿用既有惯例），正面：跑一次 checkpoint 后 `progress_query`
   能查到该 `opcode` 的记录（与本轮 `progress_query` 的实现**天然咬合**）；有牙：无绑定时
   `NOT_SUPPORTED`、坏卷 `INVALID_HANDLE`、`opts->scope` 非法值如实拒。
+
+## §5.16 `volume_format` 的实现阻塞与裁定（2026-09-28，证据链）
+
+**结论：显式登记「延后」**（不是"实现不了就放弃"，而是**缺 API 通道**，且修法明确）。
+
+证据（逐条给出源码位置）：
+
+| # | 事实 | 位置 |
+| :-: | :--- | :--- |
+| 1 | 安全路径核心**不做设备发现**；`nxfs_safe_context_t::device` 由调用方传入（`nxfs_handle_t` = 设备描述符地址） | `20-兼容层与安全路径/safepath.h:6-8` |
+| 2 | 设备是**调用方构造的 vtable**：`read_sectors` / `write_sectors` / `capacity`（`nxfs_sp_device_t`，含 `struct_size`） | `20-兼容层与安全路径/safepath.h:70-86` |
+| 3 | 设备构造入口由**调用方提供 ctx 与 device 内存** | `20-兼容层与安全路径/safepath.h:105` |
+| 4 | `d0_format_volume(ctx, req, volume_sectors, out)` 要求 `ctx->storage.safe.device` **已绑定**；D0 明示**不分配内存、不打开设备、不打印** | `D0-卷与分区管理/d0_format.h` |
+| 5 | 存储抽象层**无**"按名字打开设备 / 设备注册 / 后端注册"面 | `30-存储抽象层/storage.h`、`nxfs_storage_layout.h` |
+| 6 | API 的格式化选项只有 `const char *device`（**路径**），**没有** `volume_open` 那样的 `ctx_storage`/`ctx_size` 通道 | `fs-api-design/nxfs.h`（`nxfs_volume_format_options_t`） |
+
+**裁定**：`volume_format` 的"摆位 + 产出"逻辑**确实属于 D0**（`d0_format_layout` / `d0_format_volume` 已具备），
+但**设备通道缺失**：freestanding 层拿不到 `nxfs_sp_device_t`，也无路径解析点。三条可选修法（待上级追认）：
+
+1. **API 尾部追加设备通道**（推荐，与 v1.3.0 为 `volume_open` 追加 `ctx_storage`/`ctx_size` 同构）：
+   追加 `void *device_desc; uint32_t device_desc_size;`，由调用方构造 `nxfs_sp_device_t` 传入；
+2. **新增"调用方预绑定设备"的形态**：例如 `volume_format_bound(device_desc, opts, out)`；
+3. **实现面改归 A0**（Windows 集成层，允许文件 I/O）：但会打破 `AC-A0.1` 进程边界与"零可变对象"，
+   且 A0 不在宿主门禁内 ⇒ **不推荐**（与审计 §5.6 的同类裁定一致）。
+
+**当前状态**：登记为「延后」（理由见上表），棘轮由 10 削到 8（本行 + 其操作码行）。
