@@ -730,3 +730,32 @@ nxfs_meta_file_write(volume, opts, out):
 
 > **状态**：**草案，待追认**（与 §5.11–§5.14.1 一并）。追认前**不要**在 05 里凭空实现这三面
 > （否则又是"无落点的空实现"，会污染判据②b 的取证语义）。
+
+#### 5.15.1 补记：**卷绑定不能"按值内嵌"50 的日志上下文**（实测洞察）
+
+§5.15 草案写的是"在 40 的 ctx 里放一个 `nxfs_journal_context_t`"。**这条要改**，原因具体：
+
+`50/checkpoint.c` 的 `nxfs_journal_context_t` 里含**大数组**（`ck_node_t nodes[NXFS_JOURNAL_CHECKPOINT_STEP_MAX]`、
+`nxfs_cluster_t queue[...]`、`qdepth/qparent[...]` 等）。而 40 的测试夹具是**栈上按值**的
+（`tvol_t v;`，内部按值含 `nxfs_meta_context_t`）⇒ 若把日志上下文**按值**塞进卷上下文，
+夹具会被撑到数 KB～数十 KB，**栈压力与新平台的栈上限（UEFI/内核）都会成为新风险**，
+而且会改动所有既有夹具的尺寸假设。
+
+**修正建议（择一，待追认）**：
+1. **指针 + 由调用方提供**（推荐，最贴合 50 的既有风格 —— 50 本来就是"状态进来、调用方拥有"）：
+   40 的 ctx 存 `void *journal; uint32_t journal_bytes;`，**内存由装配层（05）或调用方提供**
+   （`05` 的 `volume_open` 适配器里分配/绑定）；好处：40 不依赖 50 的头、不改变夹具尺寸、
+   满足"零可变全局"。
+2. **50 侧提供不透明句柄**（若 50 愿意暴露 `nxfs_journal_t` 抽象）：40 只持句柄，尺寸由 50 自管；
+   代价是要动 50 的公开面（**属 50 的权责，需 50 包主同意**）。
+3. 内嵌（原稿）：**否决**，理由如上。
+
+**落到 `checkpoint` 面的路径（追认后 5 分钟即可做完）**：
+· 40/05 侧：`nxfs_meta_checkpoint(volume, opts, progress)` ⇒ 取 `ctx->journal` 指针 ⇒ 转调 50 的
+  `nxfs_journal_checkpoint_begin/step`（循环到 `more == 0`）⇒ 把 `nxfs_checkpoint_report_t`
+  映射到 `nxfs_progress_t`（`opcode = NXFS_OP_CHECKPOINT`）；`ctx->journal == NULL` ⇒
+  **如实 `NXFS_ERR_NOT_SUPPORTED`**（不做无状态假检查点）。
+· 构建：05 的 `link_only` 需加 50 的 `checkpoint.c`（**这属于依赖裁定**，列入追认清单）。
+· 测试：独立函数 + 自挂干净卷（沿用既有惯例），正面：跑一次 checkpoint 后 `progress_query`
+  能查到该 `opcode` 的记录（与本轮 `progress_query` 的实现**天然咬合**）；有牙：无绑定时
+  `NOT_SUPPORTED`、坏卷 `INVALID_HANDLE`、`opts->scope` 非法值如实拒。
