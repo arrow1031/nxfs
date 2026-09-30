@@ -42,7 +42,7 @@ xfs_st_unmark_unwritten(handle, cluster)：写实后清除；
    - 记账容器：ctx 内一段**有界**的 run 列表（如 64 项）或位图分片；溢出时**回退为"写实前先读"**（保守 ✓）。
 2. **40 层**：
 xfs_meta_alloc_clusters() 分配成功后 mark_unwritten（覆盖文件/对象/目录/快照/格式化 ✓
-   全部分配者 ✓），并**撤掉** ile.c 里那份逐簇 
+   全部分配者 ✓），并**撤掉** file.c 里那份逐簇 
 xfs_st_cluster_init（避免额外 IO ✗）。
 
 ## 4. 验收（全部免真盘，秒级）
@@ -90,6 +90,6 @@ xfs_st_write 且 len == payload_bytes ✓）⇒ **无读、无 RMW** ✓；
 1. 簇缓冲必须是**本层自持**且有**容量校验** ✓（参照 cow.c 对 obj_scratch_bytes 的校验写法 ✓）；
 2. **最后一个块**（used < payload_bytes）要**显式补零**到 payload_bytes ✓，否则又退化成部分写 ✗；
 3. 回归：脏镜像（全 0xAA）× 4/64 KiB 簇 × 8 MiB 与 **66 MB ISO** ⇒ **SHA-256 MATCH** ✓；
-   	ools/use_e2e.py 保持 **52/0** ✓；erify/run_all.py 保持**全绿**（12 包 pass ✓）；
+   	ools/use_e2e.py 保持 **52/0** ✓；verify/run_all.py 保持**全绿**（12 包 pass ✓）；
 4. 真盘复测（老盘 Disk 0，已授权）：**66 MB ISO 应在 ~30 s 内**完成并 SHA-256 MATCH ✓ —— 这是本轮
    "从 270 s 到 30 s"的**验收数字** ✓。
