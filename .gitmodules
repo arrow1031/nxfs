@@ -3,4 +3,4 @@
 	url = https://github.com/arrow1031/nxfs-api-design.git
 [submodule "nxfs-impl"]
 	path = nxfs-impl
-	url = https://github.com/arrow1031/nxfs-impl.git
+	url = https://github.com/arrow1031/stoa-impl.git
