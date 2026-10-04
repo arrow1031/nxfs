@@ -4,10 +4,10 @@
 !/.gitignore
 !/README.md
 !/新文件系统设计稿.txt
-!/NXFS开发执行表.txt
-!/NXFS开发包/
+!/StFS开发执行表.txt
+!/StFS开发包/
 !/fs-api-design
 !/nxfs-impl
 
 # 开发包内的构建产物不入库（兼容层 zig-cache / obj 等）
-NXFS开发包/**/build/
+StFS开发包/**/build/

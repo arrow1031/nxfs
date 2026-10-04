@@ -1,0 +1,83 @@
+40 流交接清单（给 API/规则流统筹）
+A. 现状事实（可直接引用的锚点）
+项	值
+首次冻结	基线 e558096；跟进 2156cfb（代码）、f982891（文档）
+后续 40 提交	d03a07b（§14.5 登记为 §6 第 6 行）、8b0fe5c（参与合练 + 修 O-1）、687090f（修 §3 越界 + U2-40）
+impl 远端 main	83bb66b（底层后续提交）；我的 687090f 是其祖先，已含在 CI 绿运行内
+meta 指针	1a60b89 → gitlink 687090f（落后于 83bb66b，需其提交者或 API 流按 §5.3 补）
+40 门禁（无争用实测）	build.py 396/0、verify_freeze.py 全通过、check_deps --link-smoke A~F PASS、合练 126/0、run_all.py 三包+合练通过、mutate.py 14/14
+CI	run #29（687090f）：20=225/0、30=781/0、40=396/0；唯一失败=共享夹具 stfs_fixture.c:36 缺 POSIX 特性宏 → 已由 83bb66b 修，run #32 success
+40 侧行为面变更（U4 用）	① O-1 降级口径（ledger_view.primary_corrupt 置位）② §3 越界修复（改由公开标志推导）③ 新增加性入口 stfs_meta_object_load_reported()
+B. 待办清单（逐条带归属与验收口径）
+#	事项	归属	验收口径
+B1	U2 的 J6-a：数据簇 CRC 失败经 40 读栈上浮（写进 verify/joint/joint_main.c）	底层/API 流（那是底层文件，40 不写）	用 stfs_meta_object_load_reported(..., &io)；断言 CORRUPT + io.bad_cluster + io.bad_lba；30 零改动；40 侧能力已就绪并自测（ac40 附加段 8 项断言）
+B2	U3 夹具几何收敛：verify/fixtures/README（若有）指 20 的 TD_*、夹具头用 STFS_FX_*，两套字面量并存	底层/API 流	收敛为"夹具只声明卷参数（扇区数/簇大小），几何一律经 stfs_st_geometry_default()"
+B3	U4 第二次冻结	各包自己（40 侧由我或 API 流代笔）	触发=合练收尾；40 在 FREEZE.md §0 追加一节，不覆盖首次冻结事实；内容=O-1 + §3 修复 + U2 入口
+B4	指针账：meta gitlink 跟上 impl 最新（83bb66b 或其后）	推送者（§5.3）或 API 流统一	verify_freeze.py 的"父仓 gitlink == 本仓 HEAD"为硬门禁
+B5	CI 覆盖合练：夹具/基座已收编（U1=a8d1cd9）；run_all.py 缺 run_joint.py 时的"跳过→失败"是否已按 §7 #5 落地	底层/API 流	#32 已绿说明合练已进 CI；建议再确认"缺目录即 FAIL"分支存在（防止退回静默跳过）
+B6	跨包观察项：测试头 guard 撞名	需 API 流裁定后再落地	20 与 40 的 test/test_device.h 曾共用 STFS_TEST_DEVICE_H（30 用 STFS_TEST30_DEVICE_H）；同时包含时后者被静默跳过。40 撤掉合练段后已不包含 20 的测试头，故未改；check_deps E 段只扫包根 *.h，test/ 不在范围。建议：E 段扩到 test/，或加"跨包同名头 + 同 guard → FAIL"。注：20 流近期也在改这个文件，请先与它对齐再动
+B7	§14.5(a) 副总账推导单点化（环节2 对齐批次，与 20 同批）	20 侧导出 + 40 侧改调用	40 侧 5 处调用点（ledger.c 读副本/写副本/格式化/双副本比对/写路径兜底）+ 删除 led_secondary_lba()；还清后删 verify/rule_registry.py 的 registered 行；F 段现仍打印该债（ledger.c:264，测试侧独立复算永久允许）
+B8	40 未做/不自行发明（列明以免被误认遗漏）	需裁定后才动	① 目录枚举（FOLDER_LOG 载荷语义属 70/90）② 容量档位变更（布局变更，走对齐批次，需同步 verify_freeze 常量表 + AC-40.8）③ stfs_meta_txn_commit 的"卷句柄 vs 全局 id 登记"（10-公共约定 §10 未定项，装配层裁定）
+C. 若 API 流要我继续动手，请按此下达（我不自行启动）
+每条指令我按此套路执行：改动清单+影响面 → 只改 40 自己的交付面 → 串行重跑门禁 → 在 §7 记行 → 提交（按路径显式 add）→ 先 impl 后 meta 推送。
+
+动作类型	必须重跑	备注
+改 40-元数据引擎/** 任一（含 test/）	build.py --clean → verify_freeze.py → check_deps.py --link-smoke → run_joint.py → run_all.py --no-clean → mutate.py	FREEZE §4；结果写进 FREEZE §5.6
+纯文档（README/FREEZE）	verify_freeze.py	仍需记 §5.6
+跨包（B6/B7 类）	上述全部 + 对侧门禁	只读消费对方冻结头；不代改别包
+复现/推送命令（供 API 流或我执行时用，本机专用）：
+
+powershell
+复制
+python stoa-impl\40-元数据引擎\build.py --clean
+python stoa-impl\40-元数据引擎\verify_freeze.py
+python stoa-impl\verify\check_deps.py --link-smoke
+python stoa-impl\verify\joint\run_joint.py
+python stoa-impl\verify\run_all.py --no-clean
+python stoa-impl\40-元数据引擎\mutate.py          # 只在干净树上跑
+# 推送：显式 URL + token；先 impl 后 meta；核对用 ls-remote（本地 origin/main 会过期）
+D. 本会话实测的坑（写进统筹纪律更省事）
+同工作区并发构建必假红：实测 UnableToWriteArchive / WinError 5/145；串行即消失（§5.1 已有，这里是第 2、3 个实例）。
+mutate.py 的恢复阶段被打断会留下注入缺陷：已加固为"脏交付面拒绝运行 + 原子写 + 恢复校验 + 报警给 git 恢复命令"（≥ 687090f）；任何流跑变异前请确认脚本版本。
+git add -A 禁用、不代推别流提交、推送后核对必须 ls-remote（本地跟踪引用会过期，会把已推的误报成未推）。
+CI 里夹具/基座的失败会连带把三包的 job 判红（同一 job 串行跑），排查时先看失败点是不是夹具（run #29 即此例：40 本身 396/0）。
+
+================================================================================
+E. 闭环复核与遗留（2026-09-26，40 流只读复核 → 交统筹处理）
+================================================================================
+复核依据：COORDINATION.md §4.1/§7（当前事实）+ 40-元数据引擎/FREEZE.md §0.1。
+方式：**只读**，未运行任何构建/测试/推送。
+
+E.1 B 表逐项现状
+#	事项	现状	依据
+B1	U2 的 J6-a（数据簇 CRC 失败经 40 读栈上浮）	已闭环：40 侧 stfs_meta_object_load_reported()（687090f）+ 底层侧 J6-a 落地；合练 126 → 146；并做定向变异证有牙（打掉上浮的 bad_cluster → 该用例立即变红）	§4.1 U2、§7 #16
+B2	U3 夹具几何收敛	已闭环：新增 verify/fixtures/README.md，三处同值字面量收敛为夹具一处	§7 #17、§4.1 U3
+B3	U4 第二次冻结（40 侧 §0.1 注记）	已由统筹代 40 落地：FREEZE.md §0.1 已追加，明确不覆盖首次冻结事实	§4.1 U4、§7 #19
+B4	指针账（meta gitlink 跟 impl）	按 §5.3 处理；以父仓 gitlink 为准	§4.1
+B5	CI 覆盖合练	已闭环：run_all.py 缺基座改 FAIL；CI #34（e1abad6）success，J6-a 在 CI 上 RUN+OK、合练 146/0、40=396/0	§7 #11/#20
+B6	跨包测试头 guard 撞名	已裁定并落地：三包统一 STFS_TEST<包号>_DEVICE_H；check_deps E 段扩到 test/（跨包同名 guard → FAIL，自检 21/21）	§7 #18、§4.1 B6
+B7	§14.5(a) 副总账推导单点化	**未开工，触发未到**：属环节2 对齐批次、与 20 同批（20 侧先导出布局头 inline；40 侧 5 处改调用 + 删 led_secondary_lba() + 清 rule_registry 的 registered 行）	40 FREEZE §6 第 6 行、§7 #6
+B8	目录枚举 / 容量档位 / txn 卷句柄	均属"需裁定后才动"（后两者跨批次/未定项）	40 FREEZE §6 第 1/3/4 条
+
+E.2 只读复核：统筹在 40 包内代改的两处（内容正确，无需返工）
+1	FREEZE.md §0.1：明确声明首次冻结事实一字未改；三项行为变更（O-1 降级口径 / §15 越界修复 / U2 加性入口）与提交号、验收面（396/0、合练 146/0、mutate 14/14）逐项对得上；并复述 §14.5 的批次归属
+2	test/test_device.h：guard 已统一为 STFS_TEST40_DEVICE_H，且该类撞名此后由 E 段机器拦截（不再依赖口头约定）
+结论	D1 裁定（from_secondary == 1 ⇒ 视图与状态都必须置位）与 40 的实现一致；CI #34 的 40=396/0 佐证
+
+E.3 留规则流/统筹决定（40 流不自行处理）
+P1	权属流程：§2 权属表写明 40-元数据引擎/** 的唯一修改者是 40 流，而 §7 #18/#19 记录了"底层/统筹"直接改 40 的 FREEZE.md 与测试头。内容无害且已留痕；建议补一条"**代改上游包文件须由该包追认一行**"，避免多流并行时包主看到自己没写过的改动
+P2	纯排版（非功能）：FREEZE.md §0 的"当前指针"单元格混入游离文本「|（本记录所在提交 7ce897f 即当时的指针）」（728b2c4 形式推广时残留）。清它只需一行，等指令
+
+E.4 40 侧当前基线（供统筹直接引用）
+build.py --clean	396 项 / 0 失败
+verify_freeze.py	全通过
+check_deps.py --link-smoke	自检 21/21、A~F PASS
+合练 verify/joint/run_joint.py	146 项 / 0 失败（J1~J6-a）
+verify/run_all.py	三包 + 合练通过
+mutate.py	14/14（14 处定向缺陷全被对应 AC 抓到）
+CI	run #34（e1abad6）success；run #29（687090f）内 40=396/0
+
+E.5 40 流下一步（等指令，不自行启动）
+唯一预期任务：B7（§14.5(a)）——触发条件=环节2 对齐批次与 20 同批；
+执行套路（不变）：改动清单+影响面 → 只改 40 交付面 → 串行重跑 build.py/verify_freeze.py/check_deps.py/run_joint.py/run_all.py/mutate.py → §7 记行 → 按路径显式 add → 先 impl 后 meta 推送。
+

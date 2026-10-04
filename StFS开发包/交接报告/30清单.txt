@@ -1,0 +1,58 @@
+30 流移交清单（→ API 流统筹）
+A. 移交时刻的状态（我最后一次观察）
+项	值
+实现仓	本地=远端=d032c28；CI #32（83bb66b）= success，#33（d032c28）在跑（预期绿）
+meta 仓	本地=远端=bcc9807
+父仓指针	687090f（落后 impl 主分支 4 个提交，是当前唯一结构性不一致）
+30 包	冻结基准不变；sources/headers/test/ 零改动 ⇒ 不需要第二次冻结
+协商文件	stoa-impl/COORDINATION.md（我起草；§7 日志已到 #15）
+B. 我这轮留下的全部净改动（谁在哪能查到）
+落点	内容	状态
+COORDINATION.md	§1~§6 协同骨架 + §4.0 无争用基线 + §7 行 #1~#5、#14（诊断）、#15（闭环）	已推送
+verify/joint/joint_main.c	J6 段（30 位图路径：重建/登记/重扫/跨挂载采信），坐标 L71–73 / L408–531 / L544，仅调用 storage.h 1~14 节	被底层收编进 a8d1cd9
+meta StFS开发包/30-存储抽象层/开发包.md	§3.2 口径修正（变异 10→11）+ 实现状态补"跨包验收已纳入本包"	已推送
+C. 未完成项清单（归属 / 阻塞 / 落点）
+ID	事项	归属	阻塞条件	落点文件
+U2-底	J6-a：数据簇 CRC 失败经 40 读栈上浮	底层（20）	已解除（40 侧入口 stfs_meta_object_load_reported() 已提交，§7 #7/#13）	verify/joint/joint_main.c
+U4	第二次冻结追记	各包自己	合练收尾	40-元数据引擎/FREEZE.md（40 需要）；30 不需要
+P1	父仓指针 bump 到 impl 当前 HEAD	按 §5.3 落地方	无	meta 仓 stoa-impl gitlink
+—	20/40 自己的 U 项	见 COORDINATION.md §4.1	—	—
+J6-a 的现成断言口径（照抄即可，30 零改动）：
+
+用 30 的 stfs_st_cluster_seal() 造合法簇头，或直接改夹具镜像里某数据扇区一字节；
+经 40 的 stfs_meta_object_load_reported(..., stfs_st_io_result_t *out_io) 读该对象；
+断言 rc == STFS_ERR_CORRUPT，且 out_io.bad_cluster / bad_lba 指向预期簇/LBA；
+合练用例数 126 → 127+，run_joint.py 应全绿。
+D. 接管方必须知道的环境事实（都是实测踩过的）
+串行跑构建：并发会撞 build/zig-cache → 假红（WinError 5、WinError 145（目录不是空的）、zig UnableToWriteArchive）。不是代码问题。
+推送方式（本机默认 git push 必失败：schannel + 凭据助手管道被沙箱拦）：
+复制
+-c http.sslBackend=openssl -c http.sslCAInfo=F:/Workspace/.tools/ca-bundle-win.pem -c credential.helper=
+目标 URL 用 token（读 F:\Workspace\.gh-token）；核对远端用 ls-remote（本地 origin/main 跟踪引用会过期，git log origin/main..HEAD 会误报"未推"）。
+CI 判读：python gh\ghctl.py runs arrow1031/stoa-impl；日志下载接口会 401，需要时用我留的探针 python F:\Workspace\.tools\ci_probe.py <run_id>（该文件在 .tools/，不在任何仓库内）。
+禁 git add -A：会把他人未完成的包/设施卷进提交；按路径显式 add。
+权属（COORDINATION.md §2）：verify/**（含夹具、合练基座、run_all.py）与 COORDINATION.md 归底层；非底层只能按 §7 记行请求。
+合练已在 CI 中（底层 §7 #11 落地：缺基座由"跳过"改 FAIL）——所以合练红了就是真红。
+E. 建议的接管顺序
+串行窗口内跑一次 python stoa-impl\verify\run_all.py：应见 封口 A~F + 20(228) + 30(781) + 40(388) + 合练(126) 全绿。
+P1 指针 bump（消掉唯一结构性不一致）。
+落 U2-底（J6-a）→ 用例数 +，CI 绿。
+U4：40 追记第二次冻结；30 无需；建议同时在 meta 侧记一笔"环节1（只读最小可跑）达成"。
+收尾后刷新 COORDINATION.md §4.0 基线。
+F. 我没有做（防重复，供核对）
+未改任何非 30 文件（除 J6 追加、COORDINATION.md §7 行、meta 30 开发包）；未 bump 指针；未代推他人提交；未碰 verify/** 的实现；未在合练里加第二份夹具（唯一一次重复尝试已删除）。
+
+G. 移交后我的可用性
+按你指令不再自行运行任何东西。仅在被指派时执行：J6 段改名/移位、J6-a 的 30 侧断言口径、30 包相关验证（届时才运行）、或 30 侧任何新活。
+
+H. 追加记录：统筹接手后 30 侧的唯一变化（2026-09-26，由 30 流补记，待统筹处理）
+时点	实现仓 e1abad6（「合练 J6-a + 夹具几何收敛 + 测试头守卫改名」）CI #34 = success；统筹随后 4fd814a 补 CI 证据；父仓指针已 bump（P1 消解）。
+变化	统筹在 U3「夹具几何来源收敛」中改了 30 包**两处**，均在测试侧、行为中性：
+	① 30-存储抽象层/build.py：includes 由 [_SAFEPATH_DIR] 改为 [_SAFEPATH_DIR, "verify/fixtures"]（只是多一个 -I）。
+	② 30-存储抽象层/test/test_device.h：新增 #include "stfs_fixture.h"；TD_VOLUME_SECTORS 由字面量 262144u 改为 STFS_FX_VOLUME_SECTORS（**值未变**，收敛的是来源；宏名保留以免动 test_main.c）。
+判定	行为中性（数值不变、仅测试侧）；30 的 sources/headers/实现零改动 ⇒ **无需第二次冻结**（与 COORDINATION.md U4 一致）。30 流的既有验收面不变：AC-30.1~30.10、781 项检查、变异 11/11。
+待统筹处理	30 的 FREEZE.md §5 字面要求「test/ 任何改动 → 重跑验收 + 更新记录」，而该收敛目前**只记在 COORDINATION.md（U3 / U4 / §7）**，30 包内无留痕。请统筹二选一：
+	(a) 认定 COORDINATION.md 的记录已足够，30 包内不追加（建议在 COORDINATION.md §7 记一行作为裁定留痕）；
+	(b) 指派 30 流在 30/FREEZE.md 追加一行（只追加、不覆盖首次冻结事实），或在 meta 30-存储抽象层/开发包.md 的实现状态注一句。
+	—— 30 流在收到指派前**不动任何 30 文件**（当前 30 包工作区干净）。
+附：本文件为 30 流停手时的移交清单（A~G）；H 节是统筹接手后的补记，二者都不替代实现仓 COORDINATION.md 与各包 FREEZE.md。

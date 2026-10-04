@@ -1,0 +1,792 @@
+# 跨版本兼容矩阵 — 原始日志合集（16 份矩阵 + 2 份反证实验）
+
+
+##################### mkfs-NEW.log #####################
+
+image: F:\Workspace\onsite103-evidence\compat\compat-NEW-master.img sectors=296960 (145.0 MiB) cluster=4096 mode=whole-disk
+mbr: slot=0 type=127 start_lba=2048 count_sectors=262144 disk_sectors=296960
+gpt: 已清除 GPT 残留（LBA1 + 末扇区 296959）⇒ 纯 MBR 布局
+layout: primary_ledger_lba=65536 primary_boot_table_lba=66048 secondary_ledger_lba=131072 boot_table_backup_lba=131584 usable=1
+format: D0 rc=0 40 rc=0 volume_sectors=262144
+verify: 40 ledger rc=0 valid=1 ext_valid=1 version=1 cluster=4096 boot_entries=0 root_log=2 checkpoint=1 secondary_lba=131072 boot_table_lba=66048 boot_table_backup_lba=131584
+verify: 40 boot_table rc=0 entry_count=0 kernel_entries=0 bootable=0
+result: D0_MKFS_OK
+
+
+##################### mkfs-OLD.log #####################
+
+image: F:\Workspace\onsite103-evidence\compat\compat-OLD-master.img sectors=296960 (145.0 MiB) cluster=4096 mode=whole-disk
+mbr: slot=0 type=127 start_lba=2048 count_sectors=262144 disk_sectors=296960
+gpt: 已清除 GPT 残留（LBA1 + 末扇区 296959）⇒ 纯 MBR 布局
+layout: primary_ledger_lba=65536 primary_boot_table_lba=66048 secondary_ledger_lba=131072 boot_table_backup_lba=131584 usable=1
+format: D0 rc=0 40 rc=0 volume_sectors=262144
+verify: 40 ledger rc=0 valid=1 ext_valid=1 version=1 cluster=4096 boot_entries=0 root_log=2 checkpoint=1 secondary_lba=131072 boot_table_lba=66048 boot_table_backup_lba=131584
+verify: 40 boot_table rc=0 entry_count=0 kernel_entries=0 bootable=0
+result: D0_MKFS_OK
+
+
+##################### NEW-P0-none-NEW.log #####################
+
+$ F:\Workspace\stoa-impl-wt-cap\tools\build\stfs_use.exe --image compat-NEW-P0-none.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+volume: abi=1.5 cluster=4096 label="StFS-COMPAT" total_bytes=97613264 free_bytes=97613264
+volume: vol_attrs=0x882 format_disk=0 format_meta=0 tables_present=1
+journal: root_log_cluster=2 checkpoint_cluster=1 crossfile=4+8
+
+[rc=0]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+  ledger_verify          rc=0 (OK)  [OK]
+  ledger: primary_ok=1 secondary_ok=1 ext_primary_ok=1 ext_secondary_ok=1 txn_id_match=1 copies_differ=0 primary_txn=6 secondary_txn=6
+  boot_table             rc=0 (OK)  [OK]
+  boot: entries=0 kernel=0 bootable=0 from_secondary=0
+  tables_present=1 subject_table=31+1
+ledger_result: OK
+
+[rc=0]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+watermark: next=32  (reserved[chk=1 rootlog=2 xf=4+8] tables[sub=31+1 snap=13+1 sv=14+1] tables_present=1)
+alloc:   start=32 limit=23878 (bump；回收为空操作 ⇒ 旧版本簇不回用)
+mount(rw): label="StFS-COMPAT" cluster=4096 tables_present=1 tables_created=0
+ls /d
+  [FILE] f1                           size=0 subject={kind=1 a=337800568 b=0}
+  [FILE] f2                           size=0 subject={kind=1 a=388133425 b=0}
+  [FILE] f3                           size=0 subject={kind=1 a=371355806 b=0}
+ls: 3 entries
+
+[rc=0]
+
+
+##################### NEW-P0-none-OLD.log #####################
+
+$ F:\Workspace\onsite103-evidence\oldbuild\stfs_use_old.exe --image compat-NEW-P0-none.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### NEW-P1-ext.version=2-NEW.log #####################
+
+$ F:\Workspace\stoa-impl-wt-cap\tools\build\stfs_use.exe --image compat-NEW-P1-ext.version=2.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### NEW-P1-ext.version=2-OLD.log #####################
+
+$ F:\Workspace\onsite103-evidence\oldbuild\stfs_use_old.exe --image compat-NEW-P1-ext.version=2.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+volume: abi=1.5 cluster=4096 label="" total_bytes=97613264 free_bytes=97613264
+volume: vol_attrs=0x802 format_disk=0 format_meta=0 tables_present=0
+journal: root_log_cluster=2 checkpoint_cluster=1 crossfile=4+8
+
+[rc=0]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+  ledger_verify          rc=0 (OK)  [OK]
+  ledger: primary_ok=0 secondary_ok=0 ext_primary_ok=0 ext_secondary_ok=0 txn_id_match=0 copies_differ=0 primary_txn=6 secondary_txn=6
+  boot_table             rc=0 (OK)  [OK]
+  boot: entries=0 kernel=0 bootable=0 from_secondary=0
+  tables_present=0 subject_table=0+0
+ledger_result: OK
+
+[rc=0]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+watermark: next=12  (reserved[chk=1 rootlog=2 xf=4+8] tables[sub=0+0 snap=0+0 sv=0+0] tables_present=0)
+alloc:   start=15 limit=23878 (bump；回收为空操作 ⇒ 旧版本簇不回用)
+mount(rw): label="" cluster=4096 tables_present=1 tables_created=1
+ls /d: 不是目录（rc=-40 NOT_FOUND）
+
+[rc=1]
+
+
+##################### NEW-P2-ext.format_flags=1-NEW.log #####################
+
+$ F:\Workspace\stoa-impl-wt-cap\tools\build\stfs_use.exe --image compat-NEW-P2-ext.format_flags=1.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### NEW-P2-ext.format_flags=1-OLD.log #####################
+
+$ F:\Workspace\onsite103-evidence\oldbuild\stfs_use_old.exe --image compat-NEW-P2-ext.format_flags=1.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+volume: abi=1.5 cluster=4096 label="" total_bytes=97613264 free_bytes=97613264
+volume: vol_attrs=0x802 format_disk=0 format_meta=0 tables_present=0
+journal: root_log_cluster=2 checkpoint_cluster=1 crossfile=4+8
+
+[rc=0]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+  ledger_verify          rc=0 (OK)  [OK]
+  ledger: primary_ok=0 secondary_ok=0 ext_primary_ok=0 ext_secondary_ok=0 txn_id_match=0 copies_differ=0 primary_txn=6 secondary_txn=6
+  boot_table             rc=0 (OK)  [OK]
+  boot: entries=0 kernel=0 bootable=0 from_secondary=0
+  tables_present=0 subject_table=0+0
+ledger_result: OK
+
+[rc=0]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+watermark: next=12  (reserved[chk=1 rootlog=2 xf=4+8] tables[sub=0+0 snap=0+0 sv=0+0] tables_present=0)
+alloc:   start=15 limit=23878 (bump；回收为空操作 ⇒ 旧版本簇不回用)
+mount(rw): label="" cluster=4096 tables_present=1 tables_created=1
+ls /d: 不是目录（rc=-40 NOT_FOUND）
+
+[rc=1]
+
+
+##################### NEW-P3-objhead.version=2-NEW.log #####################
+
+$ F:\Workspace\stoa-impl-wt-cap\tools\build\stfs_use.exe --image compat-NEW-P3-objhead.version=2.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### NEW-P3-objhead.version=2-OLD.log #####################
+
+$ F:\Workspace\onsite103-evidence\oldbuild\stfs_use_old.exe --image compat-NEW-P3-objhead.version=2.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-NEW-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### OLD-F1-capacity4096-NEW.log #####################
+
+$ F:\Workspace\stoa-impl-wt-cap\tools\build\stfs_use.exe --image compat-OLD-F1-capacity=4096.img probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-F1-capacity=4096.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+volume: abi=1.5 cluster=4096 label="StFS-COMPAT" total_bytes=97613264 free_bytes=97613264
+volume: vol_attrs=0x882 format_disk=0 format_meta=0 tables_present=1
+journal: root_log_cluster=2 checkpoint_cluster=1 crossfile=4+8
+
+[rc=0]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-F1-capacity=4096.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+  ledger_verify          rc=0 (OK)  [OK]
+  ledger: primary_ok=1 secondary_ok=1 ext_primary_ok=1 ext_secondary_ok=1 txn_id_match=1 copies_differ=0 primary_txn=6 secondary_txn=6
+  boot_table             rc=0 (OK)  [OK]
+  boot: entries=0 kernel=0 bootable=0 from_secondary=0
+  tables_present=1 subject_table=26+1
+ledger_result: OK
+
+[rc=0]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-F1-capacity=4096.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+watermark: next=27  (reserved[chk=1 rootlog=2 xf=4+8] tables[sub=26+1 snap=13+1 sv=14+1] tables_present=1)
+alloc:   start=27 limit=23878 (bump；回收为空操作 ⇒ 旧版本簇不回用)
+mount(rw): label="StFS-COMPAT" cluster=4096 tables_present=1 tables_created=0
+ls /d
+  [FILE] f1                           size=0 subject={kind=1 a=337800568 b=0}
+  [FILE] f2                           size=0 subject={kind=1 a=388133425 b=0}
+  [FILE] f3                           size=0 subject={kind=1 a=371355806 b=0}
+ls: 3 entries
+
+[rc=0]
+
+
+##################### OLD-F1-capacity4096-OLD.log #####################
+
+$ F:\Workspace\onsite103-evidence\oldbuild\stfs_use_old.exe --image compat-OLD-F1-capacity=4096.img probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-F1-capacity=4096.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-F1-capacity=4096.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-F1-capacity=4096.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### OLD-P0-none-NEW.log #####################
+
+$ F:\Workspace\stoa-impl-wt-cap\tools\build\stfs_use.exe --image compat-OLD-P0-none.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### OLD-P0-none-OLD.log #####################
+
+$ F:\Workspace\onsite103-evidence\oldbuild\stfs_use_old.exe --image compat-OLD-P0-none.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+volume: abi=1.5 cluster=4096 label="StFS-COMPAT" total_bytes=97613264 free_bytes=97613264
+volume: vol_attrs=0x882 format_disk=0 format_meta=0 tables_present=1
+journal: root_log_cluster=2 checkpoint_cluster=1 crossfile=4+8
+
+[rc=0]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+  ledger_verify          rc=0 (OK)  [OK]
+  ledger: primary_ok=1 secondary_ok=1 ext_primary_ok=1 ext_secondary_ok=1 txn_id_match=1 copies_differ=0 primary_txn=6 secondary_txn=6
+  boot_table             rc=0 (OK)  [OK]
+  boot: entries=0 kernel=0 bootable=0 from_secondary=0
+  tables_present=1 subject_table=26+1
+ledger_result: OK
+
+[rc=0]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P0-none.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+watermark: next=27  (reserved[chk=1 rootlog=2 xf=4+8] tables[sub=26+1 snap=13+1 sv=14+1] tables_present=1)
+alloc:   start=27 limit=23878 (bump；回收为空操作 ⇒ 旧版本簇不回用)
+mount(rw): label="StFS-COMPAT" cluster=4096 tables_present=1 tables_created=0
+ls /d
+  [FILE] f1                           size=0 subject={kind=1 a=337800568 b=0}
+  [FILE] f2                           size=0 subject={kind=1 a=388133425 b=0}
+  [FILE] f3                           size=0 subject={kind=1 a=371355806 b=0}
+ls: 3 entries
+
+[rc=0]
+
+
+##################### OLD-P1-ext.version=2-NEW.log #####################
+
+$ F:\Workspace\stoa-impl-wt-cap\tools\build\stfs_use.exe --image compat-OLD-P1-ext.version=2.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### OLD-P1-ext.version=2-OLD.log #####################
+
+$ F:\Workspace\onsite103-evidence\oldbuild\stfs_use_old.exe --image compat-OLD-P1-ext.version=2.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+volume: abi=1.5 cluster=4096 label="" total_bytes=97613264 free_bytes=97613264
+volume: vol_attrs=0x802 format_disk=0 format_meta=0 tables_present=0
+journal: root_log_cluster=2 checkpoint_cluster=1 crossfile=4+8
+
+[rc=0]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+  ledger_verify          rc=0 (OK)  [OK]
+  ledger: primary_ok=0 secondary_ok=0 ext_primary_ok=0 ext_secondary_ok=0 txn_id_match=0 copies_differ=0 primary_txn=6 secondary_txn=6
+  boot_table             rc=0 (OK)  [OK]
+  boot: entries=0 kernel=0 bootable=0 from_secondary=0
+  tables_present=0 subject_table=0+0
+ledger_result: OK
+
+[rc=0]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P1-ext.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+watermark: next=12  (reserved[chk=1 rootlog=2 xf=4+8] tables[sub=0+0 snap=0+0 sv=0+0] tables_present=0)
+alloc:   start=15 limit=23878 (bump；回收为空操作 ⇒ 旧版本簇不回用)
+mount(rw): label="" cluster=4096 tables_present=1 tables_created=1
+ls /d: 不是目录（rc=-40 NOT_FOUND）
+
+[rc=1]
+
+
+##################### OLD-P2-ext.format_flags=1-NEW.log #####################
+
+$ F:\Workspace\stoa-impl-wt-cap\tools\build\stfs_use.exe --image compat-OLD-P2-ext.format_flags=1.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### OLD-P2-ext.format_flags=1-OLD.log #####################
+
+$ F:\Workspace\onsite103-evidence\oldbuild\stfs_use_old.exe --image compat-OLD-P2-ext.format_flags=1.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+volume: abi=1.5 cluster=4096 label="" total_bytes=97613264 free_bytes=97613264
+volume: vol_attrs=0x802 format_disk=0 format_meta=0 tables_present=0
+journal: root_log_cluster=2 checkpoint_cluster=1 crossfile=4+8
+
+[rc=0]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=0 (OK)  [OK]
+  ledger_verify          rc=0 (OK)  [OK]
+  ledger: primary_ok=0 secondary_ok=0 ext_primary_ok=0 ext_secondary_ok=0 txn_id_match=0 copies_differ=0 primary_txn=6 secondary_txn=6
+  boot_table             rc=0 (OK)  [OK]
+  boot: entries=0 kernel=0 bootable=0 from_secondary=0
+  tables_present=0 subject_table=0+0
+ledger_result: OK
+
+[rc=0]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P2-ext.format_flags=1.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+watermark: next=12  (reserved[chk=1 rootlog=2 xf=4+8] tables[sub=0+0 snap=0+0 sv=0+0] tables_present=0)
+alloc:   start=15 limit=23878 (bump；回收为空操作 ⇒ 旧版本簇不回用)
+mount(rw): label="" cluster=4096 tables_present=1 tables_created=1
+ls /d: 不是目录（rc=-40 NOT_FOUND）
+
+[rc=1]
+
+
+##################### OLD-P3-objhead.version=2-NEW.log #####################
+
+$ F:\Workspace\stoa-impl-wt-cap\tools\build\stfs_use.exe --image compat-OLD-P3-objhead.version=2.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### OLD-P3-objhead.version=2-OLD.log #####################
+
+$ F:\Workspace\onsite103-evidence\oldbuild\stfs_use_old.exe --image compat-OLD-P3-objhead.version=2.img --start-lba 2048 --count-sectors 262144 probe
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== probe（**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ledger
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+=== ledger（只读总账核验，**零写**）===
+  mount(read-only)       rc=-6 (CORRUPT)  [FAILED]
+
+[rc=1]
+$ ... ls /d
+medium: image=F:\Workspace\onsite103-evidence\compat\compat-OLD-P3-objhead.version=2.img  sectors=296960 (145 MiB)  read_only=0
+view:   --count-sectors 262144 夹住卷容量 294912（分区之外不属本卷）
+view:   start_lba=2048  volume_sectors=262144 (128 MiB)  block=512  [stfs_sp_offset_attach]
+geometry: cluster=4096  clusters=23878  payload=4088
+只读预挂载失败（rc=-6 CORRUPT）：无法安全推导分配水印，拒绝写入。
+
+[rc=1]
+
+
+##################### rehearse-run.log #####################
+
+
+=== 造 master：origin=OLD（用 OLD 自己的 mkfs + 工具写）===
+  mkfs(旧工具): OK
+  master 内容：ls /d = 3 条；ledger=OK；tables_present=1
+    扩展槽： 65536+1 txn=5 subj_cluster=23 ver=1; 65536+2 txn=6 subj_cluster=26 ver=1  <= 当前; 131072+1 txn=5 subj_cluster=23 ver=1; 131072+2 txn=6 subj_cluster=26 ver=1
+    主体表对象候选 5 个（CoW 旧版本未回收）；按当前扩展自述簇号 26 筛选后 1 个
+      候选 off=35602952 簇号=12 payload_len=3888 count=1 capacity=32
+      候选 off=35623432 簇号=17 payload_len=3888 count=3 capacity=32
+      候选 off=35635720 簇号=20 payload_len=3888 count=4 capacity=32
+      候选 off=35648008 簇号=23 payload_len=3888 count=5 capacity=32
+      候选 off=35660296 簇号=26 payload_len=3888 count=6 capacity=32  <= 活版本
+  活表对象头位于字节 35660296（payload_len=3888, cluster_count=1）
+  其后的表容器头：magic=OK kind=1 count=6 capacity=32 payload_len=3888（48+count×120=768） ⇒ 不自洽
+  本卷主体表 capacity=32 ⇒ **旧格式**(32 行)
+
+=== 造 master：origin=NEW（用 NEW 自己的 mkfs + 工具写）===
+  mkfs(新工具): OK
+  master 内容：ls /d = 3 条；ledger=OK；tables_present=1
+    扩展槽： 65536+1 txn=5 subj_cluster=27 ver=1; 65536+2 txn=6 subj_cluster=31 ver=1  <= 当前; 131072+1 txn=5 subj_cluster=27 ver=1; 131072+2 txn=6 subj_cluster=31 ver=1
+    主体表对象候选 5 个（CoW 旧版本未回收）；按当前扩展自述簇号 31 筛选后 1 个
+      候选 off=35602952 簇号=12 payload_len=168 count=1 capacity=4096
+      候选 off=35631624 簇号=19 payload_len=408 count=3 capacity=4096
+      候选 off=35648008 簇号=23 payload_len=528 count=4 capacity=4096
+      候选 off=35664392 簇号=27 payload_len=648 count=5 capacity=4096
+      候选 off=35680776 簇号=31 payload_len=768 count=6 capacity=4096  <= 活版本
+  活表对象头位于字节 35680776（payload_len=768, cluster_count=1）
+  其后的表容器头：magic=OK kind=1 count=6 capacity=4096 payload_len=768（48+count×120=768） ⇒ 自洽
+  本卷主体表 capacity=4096 ⇒ **新格式**(4096 行)
+    扩展槽： 65536+1 txn=5 subj_cluster=23 ver=1; 65536+2 txn=6 subj_cluster=26 ver=1  <= 当前; 131072+1 txn=5 subj_cluster=23 ver=1; 131072+2 txn=6 subj_cluster=26 ver=1
+    主体表对象候选 5 个（CoW 旧版本未回收）；按当前扩展自述簇号 26 筛选后 1 个
+      候选 off=35602952 簇号=12 payload_len=3888 count=1 capacity=32
+      候选 off=35623432 簇号=17 payload_len=3888 count=3 capacity=32
+      候选 off=35635720 簇号=20 payload_len=3888 count=4 capacity=32
+      候选 off=35648008 簇号=23 payload_len=3888 count=5 capacity=32
+      候选 off=35660296 簇号=26 payload_len=3888 count=6 capacity=32  <= 活版本
+
+=== 变体 OLD / P0-none ===
+    （基线：不做任何 poke）
+  [OLD 读者] mount_rc=0 tables_present=1 ledger_flags(primary=1,secondary=1,ext=1,txn=1) ledger_result=OK ls=3 读路径rc=None ⇒ ACCEPT-CONSISTENT（挂载成功、表可用、计数与总账自洽）
+  [NEW 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+
+=== 变体 OLD / P1-ext.version=2 ===
+    poke[P1-ext.version=2] LBA 65536+1 off 12: 1 -> 2（CRC 已重算）
+    poke[P1-ext.version=2] LBA 65536+2 off 12: 1 -> 2（CRC 已重算）
+    poke[P1-ext.version=2] LBA 131072+1 off 12: 1 -> 2（CRC 已重算）
+    poke[P1-ext.version=2] LBA 131072+2 off 12: 1 -> 2（CRC 已重算）
+  [OLD 读者] mount_rc=0 tables_present=0 ledger_flags(primary=0,secondary=0,ext=0,txn=0) ledger_result=OK ls=None 读路径rc=-40 ⇒ DEGRADE-TABLES（挂载成功但 tables_present=0（扩展自述不可信），读路径分类拒绝 rc=-40）
+  [NEW 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+
+=== 变体 OLD / P2-ext.format_flags=1 ===
+    poke[P2-ext.format_flags=1] LBA 65536+1 off 208: 0 -> 1（CRC 已重算）
+    poke[P2-ext.format_flags=1] LBA 65536+2 off 208: 0 -> 1（CRC 已重算）
+    poke[P2-ext.format_flags=1] LBA 131072+1 off 208: 0 -> 1（CRC 已重算）
+    poke[P2-ext.format_flags=1] LBA 131072+2 off 208: 0 -> 1（CRC 已重算）
+  [OLD 读者] mount_rc=0 tables_present=0 ledger_flags(primary=0,secondary=0,ext=0,txn=0) ledger_result=OK ls=None 读路径rc=-40 ⇒ DEGRADE-TABLES（挂载成功但 tables_present=0（扩展自述不可信），读路径分类拒绝 rc=-40）
+  [NEW 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+
+=== 变体 OLD / P3-objhead.version=2 ===
+    poke[P3-objhead.version=2@35602952] 对象头偏移 35602952（簇起点 35602944）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+    poke[P3-objhead.version=2@35623432] 对象头偏移 35623432（簇起点 35623424）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+    poke[P3-objhead.version=2@35635720] 对象头偏移 35635720（簇起点 35635712）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+    poke[P3-objhead.version=2@35648008] 对象头偏移 35648008（簇起点 35648000）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+    poke[P3-objhead.version=2@35660296] 对象头偏移 35660296（簇起点 35660288）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+  [OLD 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+  [NEW 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+    扩展槽： 65536+1 txn=5 subj_cluster=27 ver=1; 65536+2 txn=6 subj_cluster=31 ver=1  <= 当前; 131072+1 txn=5 subj_cluster=27 ver=1; 131072+2 txn=6 subj_cluster=31 ver=1
+    主体表对象候选 5 个（CoW 旧版本未回收）；按当前扩展自述簇号 31 筛选后 1 个
+      候选 off=35602952 簇号=12 payload_len=168 count=1 capacity=4096
+      候选 off=35631624 簇号=19 payload_len=408 count=3 capacity=4096
+      候选 off=35648008 簇号=23 payload_len=528 count=4 capacity=4096
+      候选 off=35664392 簇号=27 payload_len=648 count=5 capacity=4096
+      候选 off=35680776 簇号=31 payload_len=768 count=6 capacity=4096  <= 活版本
+
+=== 变体 NEW / P0-none ===
+    （基线：不做任何 poke）
+  [OLD 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+  [NEW 读者] mount_rc=0 tables_present=1 ledger_flags(primary=1,secondary=1,ext=1,txn=1) ledger_result=OK ls=3 读路径rc=None ⇒ ACCEPT-CONSISTENT（挂载成功、表可用、计数与总账自洽）
+
+=== 变体 NEW / P1-ext.version=2 ===
+    poke[P1-ext.version=2] LBA 65536+1 off 12: 1 -> 2（CRC 已重算）
+    poke[P1-ext.version=2] LBA 65536+2 off 12: 1 -> 2（CRC 已重算）
+    poke[P1-ext.version=2] LBA 131072+1 off 12: 1 -> 2（CRC 已重算）
+    poke[P1-ext.version=2] LBA 131072+2 off 12: 1 -> 2（CRC 已重算）
+  [OLD 读者] mount_rc=0 tables_present=0 ledger_flags(primary=0,secondary=0,ext=0,txn=0) ledger_result=OK ls=None 读路径rc=-40 ⇒ DEGRADE-TABLES（挂载成功但 tables_present=0（扩展自述不可信），读路径分类拒绝 rc=-40）
+  [NEW 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+
+=== 变体 NEW / P2-ext.format_flags=1 ===
+    poke[P2-ext.format_flags=1] LBA 65536+1 off 208: 0 -> 1（CRC 已重算）
+    poke[P2-ext.format_flags=1] LBA 65536+2 off 208: 0 -> 1（CRC 已重算）
+    poke[P2-ext.format_flags=1] LBA 131072+1 off 208: 0 -> 1（CRC 已重算）
+    poke[P2-ext.format_flags=1] LBA 131072+2 off 208: 0 -> 1（CRC 已重算）
+  [OLD 读者] mount_rc=0 tables_present=0 ledger_flags(primary=0,secondary=0,ext=0,txn=0) ledger_result=OK ls=None 读路径rc=-40 ⇒ DEGRADE-TABLES（挂载成功但 tables_present=0（扩展自述不可信），读路径分类拒绝 rc=-40）
+  [NEW 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+
+=== 变体 NEW / P3-objhead.version=2 ===
+    poke[P3-objhead.version=2@35602952] 对象头偏移 35602952（簇起点 35602944）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+    poke[P3-objhead.version=2@35631624] 对象头偏移 35631624（簇起点 35631616）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+    poke[P3-objhead.version=2@35648008] 对象头偏移 35648008（簇起点 35648000）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+    poke[P3-objhead.version=2@35664392] 对象头偏移 35664392（簇起点 35664384）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+    poke[P3-objhead.version=2@35680776] 对象头偏移 35680776（簇起点 35680768）: version 1 -> 2（对象头 CRC + 簇头 CRC 均已重算）
+  [OLD 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+  [NEW 读者] mount_rc=-6 tables_present=None ledger_flags(primary=None,secondary=None,ext=None,txn=None) ledger_result=None ls=None 读路径rc=None ⇒ REJECT-MOUNT（只读挂载被拒 rc=-6）
+
+# 跨版本兼容矩阵（演练实测）
+
+旧读者 = **真干净**的 `14588fe` 源树（`git archive` 抽出，硬校验 `SUBJECT_CAPACITY=32u`）构建的 `stfs_use_old.exe`；新读者 = `stoa-impl-wt-cap`（`dev/onsite-103`，含容量批全部提交）。
+镜像：128 MiB 分区（LBA 2048 起）+ 各自 mkfs/工具写入 `/d/f1..f3`；每个 poke 组一份**独立副本**，master 不动。
+
+| 镜像属主 | poke 组 | 读者 | mount(read-only) | tables_present | ledger 自述(primary/secondary/ext/txn) | ledger_result | ls /d | 读路径 rc | 判定 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| OLD | P0-none | OLD | 0 | 1 | 1/1/1/1 | OK | 3 | None | **ACCEPT-CONSISTENT** |
+| OLD | P0-none | NEW | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+| OLD | P1-ext.version=2 | OLD | 0 | 0 | 0/0/0/0 | OK | None | -40 | **DEGRADE-TABLES** |
+| OLD | P1-ext.version=2 | NEW | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+| OLD | P2-ext.format_flags=1 | OLD | 0 | 0 | 0/0/0/0 | OK | None | -40 | **DEGRADE-TABLES** |
+| OLD | P2-ext.format_flags=1 | NEW | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+| OLD | P3-objhead.version=2 | OLD | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+| OLD | P3-objhead.version=2 | NEW | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+| NEW | P0-none | OLD | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+| NEW | P0-none | NEW | 0 | 1 | 1/1/1/1 | OK | 3 | None | **ACCEPT-CONSISTENT** |
+| NEW | P1-ext.version=2 | OLD | 0 | 0 | 0/0/0/0 | OK | None | -40 | **DEGRADE-TABLES** |
+| NEW | P1-ext.version=2 | NEW | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+| NEW | P2-ext.format_flags=1 | OLD | 0 | 0 | 0/0/0/0 | OK | None | -40 | **DEGRADE-TABLES** |
+| NEW | P2-ext.format_flags=1 | NEW | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+| NEW | P3-objhead.version=2 | OLD | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+| NEW | P3-objhead.version=2 | NEW | -6 | None | None/None/None/None | None | None | None | **REJECT-MOUNT** |
+

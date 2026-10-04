@@ -1,4 +1,4 @@
-# NXFS
+# StFS
 
 模块化文件系统——面向非移动硬盘，CoW 事务 + 三层日志 + 跨文件区 + 文件夹块自包含。
 核心追求：写入不卡顿、长期不碎片化、断电可恢复、程序运行近原生延迟、绝不蓝屏。
@@ -16,10 +16,10 @@
 | 条目 | 说明 |
 | :--- | :--- |
 | [`新文件系统设计稿.txt`](新文件系统设计稿.txt) | 总设计规划书 v0.6.1（含修订记录与两处事实性修正） |
-| [`NXFS开发包/`](NXFS开发包/README.md) | 按块开发包规范：11 块 + 公共约定，每块含 `AC-*` 验收标准，可独立开工 |
-| [`NXFS开发执行表.txt`](NXFS开发执行表.txt) | 项目 → 模型调用对照表 |
-| [`fs-api-design/`](fs-api-design/) | **子模块** → 对外 API 规范（`nxfs.h` 为 C ABI 单一事实源，编译期断言锁定） |
-| [`nxfs-impl/`](nxfs-impl/) | **子模块** → 各包的**实现代码**与构建/验收脚本（包 20 / 30 / 40 已冻结；包 50 环节2 首步已落地并首次冻结） |
+| [`StFS开发包/`](StFS开发包/README.md) | 按块开发包规范：11 块 + 公共约定，每块含 `AC-*` 验收标准，可独立开工 |
+| [`StFS开发执行表.txt`](StFS开发执行表.txt) | 项目 → 模型调用对照表 |
+| [`fs-api-design/`](fs-api-design/) | **子模块** → 对外 API 规范（`stfs.h` 为 C ABI 单一事实源，编译期断言锁定） |
+| [`stoa-impl/`](stoa-impl/) | **子模块** → 各包的**实现代码**与构建/验收脚本（包 20 / 30 / 40 已冻结；包 50 环节2 首步已落地并首次冻结） |
 
 ## 总开发期
 
@@ -32,11 +32,11 @@
 
 三个仓分工：**规范回答"对外暴露什么"，开发包回答"要满足什么"，实现回答"怎么做到"**。
 
-- **[nxfs-api-design](https://github.com/arrow1031/nxfs-api-design)**（私有）— 对外 C ABI 规范子项，子模块挂在 `fs-api-design/`；
-  权威物 `nxfs.h`（编译期断言锁定的单一事实源）。
-- **[nxfs-impl](https://github.com/arrow1031/nxfs-impl)**（私有）— 实现侧子项，子模块挂在 `nxfs-impl/`；
-  每个实现包一个目录（编号与 `NXFS开发包/` 一一对应），各带 `build.py` 验收脚本；
-  同时子模块化 `nxfs-api-design` 以取得 `nxfs.h`。
+- **[stoa-api-design](https://github.com/arrow1031/stoa-api-design)**（私有）— 对外 C ABI 规范子项，子模块挂在 `fs-api-design/`；
+  权威物 `stfs.h`（编译期断言锁定的单一事实源）。
+- **[stoa-impl](https://github.com/arrow1031/stoa-impl)**（私有）— 实现侧子项，子模块挂在 `stoa-impl/`；
+  每个实现包一个目录（编号与 `StFS开发包/` 一一对应），各带 `build.py` 验收脚本；
+  同时子模块化 `stoa-api-design` 以取得 `stfs.h`。
 
 两者的更新方式相同：**先在子仓提交并推送，再在父仓提交子模块指针（gitlink）变更**。
 
@@ -46,21 +46,21 @@
 
 | 文件 | 用途 |
 | :--- | :--- |
-| [`NXFS开发包/README.md`](NXFS开发包/README.md) | 开发入口：包清单、构建顺序、环节划分 |
-| [`NXFS开发包/10-公共约定.md`](NXFS开发包/10-公共约定.md) | **全局必读**：常量、错误码、不变量、仓库分工与本地工具 |
-| [`NXFS开发执行表.txt`](NXFS开发执行表.txt) | 模型路由（含上下文纪律，控制额度消耗） |
+| [`StFS开发包/README.md`](StFS开发包/README.md) | 开发入口：包清单、构建顺序、环节划分 |
+| [`StFS开发包/10-公共约定.md`](StFS开发包/10-公共约定.md) | **全局必读**：常量、错误码、不变量、仓库分工与本地工具 |
+| [`StFS开发执行表.txt`](StFS开发执行表.txt) | 模型路由（含上下文纪律，控制额度消耗） |
 | `gh\ghctl.py` + [`gh\README.md`](gh/README.md) | **GitHub 操作统一入口**（仓库 / secret / deploy key / CI 日志 / 子模块 bump）。`gh\` 不在任何仓库内 |
 
 ```powershell
 python gh\ghctl.py status                                   # 账号 / 额度 / 三仓状态
-python gh\ghctl.py runs arrow1031/nxfs-impl --steps          # CI 结论
-python gh\ghctl.py submodule-bump nxfs-impl --commit --push  # 子仓推送后更新父仓指针
-python nxfs-impl\verify\run_all.py                          # 全部实现包验收（含跨包依赖封口前置）
+python gh\ghctl.py runs arrow1031/stoa-impl --steps          # CI 结论
+python gh\ghctl.py submodule-bump stoa-impl --commit --push  # 子仓推送后更新父仓指针
+python stoa-impl\verify\run_all.py                          # 全部实现包验收（含跨包依赖封口前置）
 ```
 
 > **跨包依赖封口**（`10-公共约定.md` §14）：一个源只有一个所有者包，别包的源走
 > `link_only`，**不许复制副本**；聚合构建必须按去重集合编译。机器强制
-> `nxfs-impl\verify\check_deps.py`，已作为 `run_all.py` 的前置阶段（CI 每次都会跑）。
+> `stoa-impl\verify\check_deps.py`，已作为 `run_all.py` 的前置阶段（CI 每次都会跑）。
 
 ## 本仓库不含
 
