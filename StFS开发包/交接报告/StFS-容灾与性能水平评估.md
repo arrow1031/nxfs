@@ -6,6 +6,9 @@
 > ／`【缺证据】`（代码无法判定或本环境无法验证）。**注释不是证据**——凡引用注释处，
 > 均同时给出可执行代码或测试作为独立支撑；仅有注释的结论一律降级为 `【缺证据】`。
 
+> **引用约定（2026-10-08 起）**：源码引用**以符号名为主**（形如 `stfs_journal_layout.h:STFS_JOURNAL_ENTRY_TYPE_*`），
+> 行号仅作辅助且**随实现漂移**；文中残留的 `:NNN` 为历史引文，一律以符号名为准。
+
 ---
 
 ## 1. 评估基准与范围
@@ -24,7 +27,7 @@ B8 把文件层地址域 u32→u64、文件头 32→40 B、格式版本统一为
 
 - 先前的 B7 已落地：`stfs_cluster_t` u32→u64；计数/长度/簇内偏移/派生下标仍 u32；
   日志父条目 9→15 B（B9 `e3afefa` 前为 13 B）；镜像索引条目 8→12 B；总账 CRC 覆盖区间 84→100；主总账 88→104 B。
-  `【已实现事实】`（`stfs_journal_layout.h:200-206`、`:217-224`；`stfs_storage_layout.h:288-294`）
+  `【已实现事实】`（`stfs_journal_layout.h` 的 `stfs_journal_parent_entry_t` / `stfs_journal_index_entry_t`；`stfs_storage_layout.h:288-294`）
 - **受 B8 影响的结论**：容量上限（u32 计数仍限制单文件字节数）、每操作字节数（文件头
   32→40 B 使每文件元数据抬升）、镜像/索引条目的每项字节数。本文凡涉及者均已在条目内标注。
   `【理论推断】`
@@ -106,7 +109,7 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
   位图分片 CRC 覆盖 `[0, 560)`（`stfs_storage_layout.h:186`）；**每个数据簇的整簇载荷
   CRC32C**（`stfs_storage_layout.h:102-105`，8 B 簇头 = `{crc32c, flags}`，
   CRC 覆盖 `[8, cluster_size)`）；文件块 v2 头 16 B 自带自校验 CRC（`meta.h:622-689`）；
-  日志头记录 CRC 覆盖 `[0, head_bytes−4)`（`stfs_journal_layout.h:29`、`:308-318`）。
+  日志头记录 CRC 覆盖 `[0, head_bytes−4)`（`stfs_journal_layout.h:STFS_JOURNAL_HEAD_CRC_BYTES`／`STFS_JOURNAL_HEAD_CRC_TRAILER_BYTES`，头部布局注释）。
   CRC 本体统一复用 pkg 20 `stfs_sp_crc32c`（软件/硬件两路已由 AC-20.13 交叉验证），
   **不另写多项式**（`storage.h:960`、`stfs_storage_layout.h:91`）。 `【已实现事实】`
 - `【已实现事实】` **结构性闸门不靠 CRC 兜底**：`struct_size != sizeof` ⇒
@@ -357,8 +360,8 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 
 - 有 CRC 的结构：主总账 v1 前缀（`ledger.c:354-390`）、总账 ext 槽（`:392-414`）、
   位图头部（`storage.h:978` / `stfs_storage_layout.h:168`）、位图分片（`:186`）、
-  日志头记录（`stfs_journal_layout.h:29`、`:308-318`）、日志父条目 1 B `check`
-  （`:205`，仅 CRC32C 低 8 位）、文件块 v2 头 16 B 自校验
+  日志头记录（`stfs_journal_layout.h:STFS_JOURNAL_HEAD_CRC_BYTES`）、日志父条目 1 B `check`
+  （`stfs_journal_layout.h:stfs_journal_parent_entry_t.check`，仅 CRC32C 低 8 位）、文件块 v2 头 16 B 自校验
   （`meta.h:622-689`）、**每个数据簇的整簇载荷**（`stfs_storage_layout.h:102-105`）。
 - **文件数据块：已覆盖。** 数据簇 CRC32C 由 pkg 30 在**每次写**时封（`storage.c:1390`、
   `:984-1010`、`:1471`），**每次读**时校验（`storage.c:827-848`），文件层读取默认
@@ -381,7 +384,7 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 
 - **是 intent log（定位/状态意图），不是 data log。**
   父条目 15 B 定长（B9 `e3afefa` 前为 13 B）：`{child_cluster u64 @+0, length_clusters u32 @+8, state u8 @+12,
-  type u8 @+13, check u8 @+14}`（`stfs_journal_layout.h:200-206`）
+  type u8 @+13, check u8 @+14}`（`stfs_journal_layout.h` 的 `stfs_journal_parent_entry_t`）
   ——只记「子文件夹日志区起始簇号 / 大小 / 状态 / 类型 / 1 B 校验」，
   **不含任何被保护对象的载荷副本**。
   头前缀 80 B 记身份与边界（`folder_id`/`parent_folder_id`/`parent_slot`/`generation` 等，
@@ -421,16 +424,16 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 
 - 加 CRC/辅助数据字段 ⇒ 必然动盘上结构。但**版本永远 = 1、无兼容分支**（已裁定），
   因此可行的路径只有一种：**用自描述字段承载新增** ——
-  `stfs_journal_head_prefix_t` 的 `prefix_bytes`（`:236`，注释明说「尾部追加后变大」）、
-  `entry_stride`（`:242`，注释明说「自描述便于将来加宽」）、
-  `reserved1`/`reserved2`（`:252-253`，注释明说「尾部追加用」）。
+  `stfs_journal_layout.h:stfs_journal_head_prefix_t.prefix_bytes`（注释明说「尾部追加后变大」）、
+  `stfs_journal_layout.h:stfs_journal_head_prefix_t.entry_stride`（注释明说「自描述便于将来加宽」）、
+  `stfs_journal_layout.h:stfs_journal_head_prefix_t.reserved1/reserved2`（注释明说「尾部追加用」）。
   `【已实现事实】`
 - ⇒ `【理论推断】` **在版本 1 内可行**，条件是：新增只通过
   「`prefix_bytes` 变大 / `entry_stride` 变大 / 新 `type` 值」三条路，且**所有消费者
   都必须按字段读而不是按常量读**。风险点：`STFS_JOURNAL_ENTRY_TYPE_*` 目前是
-  **三值域且被静态断言钉死**（`:142-144`、`:390-395`），要加新 type 必须同时扩展断言；
+  **三值域且被静态断言钉死**（`stfs_journal_layout.h:STFS_JOURNAL_ENTRY_TYPE_*` 与其同名 `STFS_STATIC_ASSERT`），要加新 type 必须同时扩展断言；
   `type` 字段本身是 `uint8_t`，空间够，但**语义断言需要同步修改**
-  （`stfs_journal_layout.h:351` 的 `type <= TYPE_PROGRAM` 判断字面表达了三值语义）。
+  （`stfs_journal_layout.h:stfs_journal_entry_type_valid()` 的 `type <= TYPE_PROGRAM` 判断字面表达了三值语义）。
 - 若要走「日志侧按更新追加 CRC 记录」这条路，则**必须先解决 §7.2 的轮转/淘汰缺口**
   与 §7.4 的写放大，否则记录数无上限而写入代价 O(M) 次簇 IO。
 
@@ -471,13 +474,14 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 ### 7.1 包 50 日志的记录形态：定长？文件标识？可挂 CRC 的字段？N = ?
 
 - **定长，是。** 父日志条目 `stfs_journal_parent_entry_t` 为 **15 B 定长**（`STFS_JOURNAL_PACKED`，
-  `stfs_journal_layout.h:199-207`；B9 `e3afefa` 前为 13 B）：`child_cluster u64 @+0`、`length_clusters u32 @+8`、
+  `stfs_journal_layout.h:stfs_journal_parent_entry_t`；B9 `e3afefa` 前为 13 B）：`child_cluster u64 @+0`、`length_clusters u32 @+8`、
   `state u8 @+12`、`type u8 @+13`、`check u8 @+14`。
   宽度由头前缀的 `entry_stride` 自描述（`entry_stride /* +28 父日志条目宽度（v1 = 9；
-  自描述便于将来加宽） */`，`:242`；B7 宽化后实测为 13，B9 再宽化为 15）。
-  ⇒ 与 4 KiB 簇一致性核对：内联容量 304 = `(head_bytes − entry_area_off − CRC尾 4) / 13`
-  = `(4096 − 128 − 4)/13`，测试断言 `entry_capacity == 304`（`test_main.c:723`），
-  溢出簇每簇 314 条，`entry_area_clusters = 2` 时总数 618（`test_main.c:1058`）。
+  自描述便于将来加宽） */`，`stfs_journal_layout.h:stfs_journal_head_prefix_t.entry_stride`；B7 宽化后实测为 13，B9 再宽化为 15）。
+  ⇒ 与 4 KiB 簇一致性核对：内联容量 263 = `(head_bytes − entry_area_off − CRC尾 4) / 15`
+  = `(4088 − 128 − 4)/15`，测试断言 `entry_capacity == 263`（`test_main.c:764`），
+  溢出簇每簇 272 条，`entry_area_clusters = 2` 时总数 535（`test_main.c:1102`）。
+  （B9 `e3afefa` 前按 stride 13 为 `(4096 − 128 − 4)/13 = 304`、每簇 314、总数 618。）
   `【已实现事实】`
 - **文件标识：条目内没有。** 身份在**区域级**而非记录级——头前缀带
   `folder_id @+8`、`parent_folder_id @+12`、`parent_slot @+16`（`:233-254`），
@@ -485,22 +489,22 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
   ⇒ **若 CRC 记录要能报出「是哪个文件失败」，要么依赖「记录落在该文件的区域里」
   这一区域级归属，要么必须在条目里新增文件标识字段（当前没有）。** `【已实现事实】`
 - **可挂 CRC 的字段 / 扩展位**：
-  - 条目内**唯一**校验位是 `check`（`:205`），= `CRC32C(前 12 B)` 的**低 8 位**
+  - 条目内**唯一**校验位是 `check`（`stfs_journal_layout.h:stfs_journal_parent_entry_t.check`，B9 前在 `:205`、现行为 `:219`），= `CRC32C(前 14 B)` 的**低 8 位**（B9 `e3afefa` 前为前 12 B）
     ⇒ 只有 **CRC8 强度**，且它校验的是**条目自身**，不是被保护的数据。
     **条目内没有空余字节**（15 B 全部占满；B9 `e3afefa` 前为 13 B）。 ⇒ 想加**完整** CRC 必须
-    **加宽 `entry_stride`**（例如 13 → 17，多出 4 B 放 CRC32C）。
-  - 头前缀有 `flags @+56`（保留位，v1 必须为 0，读取时忽略未知位，`:249`）、
-    `reserved1 @+72`、`reserved2 @+76`（`:252-253`，注释明说「尾部追加用」）、
-    `prefix_bytes @+6`（`:236`，注释明说「尾部追加后变大」）。
+    **加宽 `entry_stride`**（例如 15 → 19，多出 4 B 放 CRC32C；B9 `e3afefa` 前为 13 → 17）。
+  - 头前缀有 `flags @+56`（保留位，v1 必须为 0，读取时忽略未知位；`stfs_journal_layout.h:stfs_journal_head_prefix_t.flags`）、
+    `reserved1 @+72`、`reserved2 @+76`（`stfs_journal_layout.h:stfs_journal_head_prefix_t.reserved1/reserved2`，注释明说「尾部追加用」）、
+    `prefix_bytes @+6`（`stfs_journal_layout.h:stfs_journal_head_prefix_t.prefix_bytes`，注释明说「尾部追加后变大」）。
     ⇒ **头前缀是官方指定的尾部追加扩展点**，可挂「该区域 CRC 记录上限/计数/最旧记录游标」
     一类记账字段，而**不必加宽条目**。
-  - `type`（`:204`）是 `uint8_t`，空间够，但当前是**三值语义且被静态断言钉死**
-    （`STFS_JOURNAL_ENTRY_TYPE_UNSET/NORMAL/PROGRAM`，`:142-144`、`:390-395`），
-    且 `:351` 用 `type <= TYPE_PROGRAM` 做判断 ⇒ 新增 type **必须同步改断言与判断**。
+  - `type`（`stfs_journal_layout.h:stfs_journal_parent_entry_t.type`）是 `uint8_t`，空间够，但当前是**三值语义且被静态断言钉死**
+    （`STFS_JOURNAL_ENTRY_TYPE_UNSET/NORMAL/PROGRAM`，`stfs_journal_layout.h:STFS_JOURNAL_ENTRY_TYPE_*` 与其同名 `STFS_STATIC_ASSERT`），
+    且 `stfs_journal_layout.h:stfs_journal_entry_type_valid()` 用 `type <= TYPE_PROGRAM` 做判断 ⇒ 新增 type **必须同步改断言与判断**。
   `【已实现事实】`
 - **追加一条记录的实际字节数 N**：
   - **逻辑占用 N = 15 B/条**（若保持现有 `entry_stride`；B9 `e3afefa` 前为 13 B）；
-    若按「完整 CRC32C」加宽 stride，则 **N = 17 B/条**。 `【理论推断】`
+    若按「完整 CRC32C」加宽 stride，则 **N = 19 B/条**（B9 `e3afefa` 前为 17 B/条）。 `【理论推断】`
   - **物理代价与 N 无关，才是重点**：`journal.h:304` 明说
     「追加一条父日志条目（读改写头记录 = **1 次头读 + 1 次头写**；溢出段另加 2 次簇 IO）」。
     ⇒ **追加 1 条 15 B 记录要搬运整个头簇（4 KiB）**，写放大 ≈ `4096/15 ≈ 273×`（B9 `e3afefa` 前为 13 B / ≈315×）；
@@ -509,7 +513,7 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 ### 7.2 日志区容量与轮转：全局上限？写满如何处理？跨文件淘汰顺序能不能做？
 
 - **没有全局上限，只有「每区域」上限。** 头前缀有 `entry_capacity @+32` /
-  `entry_count @+36`（`:243-244`），且**容量不是自由字段**：必须等于由
+  `entry_count @+36`（`stfs_journal_layout.h:stfs_journal_head_prefix_t.entry_capacity/entry_count`），且**容量不是自由字段**：必须等于由
   `entry_area_off`/`entry_stride`/`head_bytes` 推出的值，否则判 `STFS_ERR_CORRUPT`
   （`journal_layout.c:209`「容量必须等于由边界字段推出的值，不许自说自话」）。
   ⇒ 容量在**建区时定死**，全卷没有一份「日志总量」账目。`【已实现事实】`
@@ -521,7 +525,7 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 - **「轮转」在代码里指『新区域的物理落位分散』，不是日志轮转/淘汰。**
   `journal.h:386-391` 分工：包 70 拥有空闲池，包 50 只拥有**落位规则**；
   `journal_alloc.c:259`「按区域轮转：从 cursor 指定的区域开始，逐个区域试」，
-  受 `STFS_JOURNAL_ISOLATION_MIN_CLUSTERS 1`（`stfs_journal_layout.h:164`）约束。
+  受 `STFS_JOURNAL_ISOLATION_MIN_CLUSTERS 1`（`stfs_journal_layout.h:STFS_JOURNAL_ISOLATION_MIN_CLUSTERS`）约束。
   `test_alloc_seq.c:386`、`test_main.c:1319` 断言的正是**落位轮转**。
   `【已实现事实】`
 - 「覆盖最旧」在代码里**只有内存先例**，不在盘上：`checkpoint.c:114`
@@ -542,18 +546,18 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 
 ### 7.3 按 N 推算：代表性文件大小各能存几条、日志占用多少
 
-按 `N = 13 B`、归约式 `rec ≥ 10%·size ⇒ 0；rec > 5%·size ⇒ 2；否则 max(2, floor(0.05·size/N))`：
+按 `N = 15 B`（B9 `e3afefa` 前为 13 B）、归约式 `rec ≥ 10%·size ⇒ 0；rec > 5%·size ⇒ 2；否则 max(2, floor(0.05·size/N))`：
 
-| 文件大小 | 5% 预算 | floor(预算/13) | 实际保留条数 | 记录字节占用 | 备注 |
+| 文件大小 | 5% 预算 | floor(预算/15) | 实际保留条数 | 记录字节占用 | 备注 |
 |---|---|---|---|---|---|
-| 1 KiB | 51 B | 3 | **3** | **39 B** | 预算 > N，按公式 |
-| 4 KiB | 205 B | 15 | **15** | **195 B** | |
-| 64 KiB | 3277 B | 252 | **252** | **3276 B** | |
-| 1 MiB | 52429 B | 4032 | **4032** | **52416 B** | |
-| 1 GiB | 53.7 MB | 4129776 | **4129776** | **53.7 MB** | 见下「能不能装下」 |
+| 1 KiB | 51 B | 3 | **3** | **45 B** | 预算 > N，按公式 |
+| 4 KiB | 205 B | 13 | **13** | **195 B** | |
+| 64 KiB | 3277 B | 218 | **218** | **3270 B** | |
+| 1 MiB | 52429 B | 3495 | **3495** | **52425 B** | |
+| 1 GiB | 53.7 MB | 3579139 | **3579139** | **53.7 MB** | 见下「能不能装下」 |
 
-- 小文件边界（`N = 13`）：`13 ≥ 10%·size` ⇔ `size ≤ 130 B` ⇒ **不留 CRC**；
-  `130 B < size < 260 B` ⇒ **保底 2 条**。⇒ 小于 260 B 的文件规则才生效，
+- 小文件边界（`N = 15`，B9 `e3afefa` 前为 13）：`15 ≥ 10%·size` ⇔ `size ≤ 150 B` ⇒ **不留 CRC**；
+  `150 B < size < 300 B` ⇒ **保底 2 条**。⇒ 小于 300 B 的文件规则才生效，
   否则一律走 `floor` 公式。`【理论推断】`
 
 **「所有文件都按 5% 记账」时日志总量会不会炸？**
@@ -563,20 +567,25 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 - **但真正的爆点在两处，都是代码可证的**：
   1. **区域粒度爆点（决定性）**：每份文件的 CRC 记录要放在「该文件所属的日志」里，
      而**每个日志区至少 1 个头簇 + 与相邻日志区 ≥1 簇隔离带**
-     （`STFS_JOURNAL_ISOLATION_MIN_CLUSTERS 1`，`stfs_journal_layout.h:164`；
+     （`STFS_JOURNAL_ISOLATION_MIN_CLUSTERS 1`，`stfs_journal_layout.h:STFS_JOURNAL_ISOLATION_MIN_CLUSTERS`；
      `journal.h:387-389`；`test_main.c:1335-1359` 断言隔离带）。
      **4 KiB 簇下每个文件最小日志代价 = 2 簇 = 8 KiB。**
      ⇒ 100 万个 200 B 的小文件：字节预算合计仅 50 MB 级，
      但日志区合计 **≥ 8 GiB**。 **5% 的字节预算根本不是约束，簇粒度才是。**
      `【理论推断】`（推导自常量与隔离带断言；区域是否可与他文件共用未取得证据）
-  2. **单区域容量爆点（有硬上限）**：`length_clusters` 是 **u16**
-     （`stfs_journal_layout.h:202`，父条目里的子区域大小字段）⇒ **单个日志区 ≤ 65535 簇**。
-     4 KiB 簇时容量 = `304 + 314×(65534)` ≈ **2.06 × 10⁷ 条**
-     ⇒ 1 GiB 文件需要的 4.13 × 10⁶ 条**装得下**（约占区域 256 MiB 中的 53.7 MB）；
+  2. **单区域容量爆点（当时的硬上限）**：`length_clusters` 是 **u16**
+     （`stfs_journal_layout.h:stfs_journal_parent_entry_t.length_clusters`；B9 `e3afefa` 后为 **u32@+8**，该字段 B9 前在 `:202`、现行为 `:216`）⇒ **单个日志区 ≤ 65535 簇**。
+     按现行 stride 15 重算，4 KiB 簇时容量 = `263 + 272×(65534)` ≈ **1.78 × 10⁷ 条**
+     （B9 前按 13 B 为 `304 + 314×65534` ≈ 2.06 × 10⁷ 条）；
+     ⇒ 1 GiB 文件需要的 3.58 × 10⁶ 条**装得下**（约占区域 256 MiB 中的 53.7 MB）；
      但 **文件大于约 5 GiB 时，其 5% 预算（> 268 MB）就超过单区上限（256 MiB）**，
      **该文件拿不到完整配额**。`【理论推断】`
-     （注：头前缀 `log_clusters` 是 u32（`:240`），与父条目的 u16 不一致；
+     （注：头前缀 `log_clusters` 是 u32（`stfs_journal_layout.h:stfs_journal_head_prefix_t.log_clusters`），与父条目的 u16 不一致；
      子树可达区域受 u16 窄侧约束。这一宽窄不一致本身是隐患。）
+     > **演进注（2026-10-08）**：B9 `e3afefa` 已将 `length_clusters` 由 u16 宽化为 u32
+     > （父条目 13→15 B）⇒ 本条「单区 ≤ 65535 簇」「> 5 GiB 文件拿不到 5% 配额」
+     > 「宽窄不一致是隐患」三条结论**已被消除**；原文与 `2.06 × 10⁷ 条` 按**历史口径**保留，
+     > 上式 `1.78 × 10⁷ 条` 是现行 stride 15 下的对照重算，现行上界为 u32（`≤ 4294967295` 簇）。
 - `【缺证据】` 单个日志区在**卷几何上**能否长到几十 MiB / 256 MiB，
   取决于 pkg 50 落位规则与卷几何的联合限制
   （`stfs_journal_plan_alloc` 的边界校验在 `journal.h:760-778`，本次未逐条核算）。
@@ -587,25 +596,26 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 
 | 文件 | 改动 |
 |---|---|
-| `50-日志体系与恢复\stfs_journal_layout.h` | 新增记录种类：加宽 `entry_stride`（13→17）或新增条目结构；扩展 `STFS_JOURNAL_ENTRY_TYPE_*` 三值语义与静态断言（`:142-144`、`:390-395`、`:351`）；若用扩展位则在头前缀尾部追加记账字段（`:252-253`） |
+| `50-日志体系与恢复\stfs_journal_layout.h` | 新增记录种类：加宽 `entry_stride`（15→19；B9 `e3afefa` 前为 13）或新增条目结构；扩展 `STFS_JOURNAL_ENTRY_TYPE_*` 三值语义与静态断言（`:155-157`、`:413-418`、`:367`）；若用扩展位则在头前缀尾部追加记账字段（`:266-267`） |
 | `50-日志体系与恢复\journal_layout.c` | append/verify/parse 适配可变 stride；头记录 CRC 重算路径（`:407`）；容量推导（`:209`、`:151`、`:263-267`） |
 | `50-日志体系与恢复\journal.h` / `journal.c` | **新增删除/截断/丢弃最旧记录**的接口与实现（当前不存在）；`stfs_journal_entry_append` 的写放大治理（批处理或专用追加区） |
 | `50-日志体系与恢复\checkpoint.c` | 重放**有意不解释载荷**（`:14`）⇒ CRC 记录对重放不可见；若要求「从日志重建元数据」须在此教会重放理解新记录 |
 | 配额裁决者（新增职责） | 全局/跨文件淘汰顺序与账目 —— **当前无归属** |
-| `50-日志体系与恢复\test\test_main.c` | 硬编码的 304 / 618 内联容量断言（`:723`、`:1024`、`:1058`）随 stride 变化必须改 |
+| `50-日志体系与恢复\test\test_main.c` | 硬编码的内联容量/总容量断言随 stride 变化必须改：**现为 263 / 535**（`:764`、`:1065-1068`、`:1102`）；B9 `e3afefa` 前为 304 / 618（`:723`、`:1024`、`:1058`） |
 
 **是否改盘上格式（版本仍 = 1）**
 
-- **可以不改版本号，但确实改盘上布局。** 依据：`prefix_bytes`（`:236`）与
-  `entry_stride`（`:242`）都是自描述字段，且 `:231` 明写「布局一经冻结只能靠
+- **可以不改版本号，但确实改盘上布局。** 依据：`stfs_journal_layout.h:stfs_journal_head_prefix_t.prefix_bytes` 与
+  `stfs_journal_layout.h:stfs_journal_head_prefix_t.entry_stride` 都是自描述字段，且 `stfs_journal_layout.h:stfs_journal_head_prefix_t` 的布局冻结注释明写「布局一经冻结只能靠
   `format_version` + **尾部追加**（`prefix_bytes` 自描述增长）」；
-  `reserved1`/`reserved2`（`:252-253`）注释即「尾部追加用」。
+  `stfs_journal_layout.h:stfs_journal_head_prefix_t.reserved1/reserved2` 注释即「尾部追加用」。
   ⇒ 新增只走「扩 `prefix_bytes` / 扩 `entry_stride` / 新 `type`」三条路时，
   **版本保持 1 是可行的**。`【理论推断】`
 - **代价与风险**：① 静态断言与 `type <= TYPE_PROGRAM` 判断必须同步改
-  （`:351`、`:390-395`），否则「三值语义」被破坏；
+  （`stfs_journal_layout.h:stfs_journal_entry_type_valid()`、`STFS_JOURNAL_ENTRY_TYPE_*` 静态断言），否则「三值语义」被破坏；
   ② 所有消费者必须**按字段读**而非按 13/9 常量读 —— 而代码里已存在常量硬编码
-  （`test_main.c:1024` 的注释文字仍是 9 B 时代的「439」，与实际 304 不符），
+  （`test_main.c:1024` 的注释文字曾是 9 B 时代的「439」，与实际 304 不符；B9 `e3afefa`
+  宽化后该处注释与断言已同步为 263 / 535，见 `test_main.c:764`、`:1102`），
   说明**常量漂移已经发生过一次**，这是可证的风险信号。`【已实现事实】`
 
 **三条判据的当前状态**
@@ -641,6 +651,9 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
   `journal_layout.h:263-264` 明确引用）。
 - 注意：现有 CRC 覆盖 `[8, cluster_size)`，**簇头自身（含 `flags`）不被覆盖**
   ⇒ 扩到 16 B 时应明确新 CRC 是否覆盖前 12 B（否则头字段本身仍不可校验）。
+  （本行讨论的是**存储簇头** `STFS_STORAGE_CLUSTER_HEAD_BYTES` 8 → 16 B 的扩字段方案，
+  与 B9 `e3afefa` 的**日志父条目** 13 → 15 B 无关 ⇒ 现行口径仍为 16 B / 前 12 B，
+  B9 未改簇头宽度，`sizeof(簇头) == 8` 的静态断言仍在。）
   `【已实现事实】`
 
 **选项 B：元数据侧表（每簇一条 CRC 记录）**
@@ -666,6 +679,42 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
    前者不该进日志，后者才是日志 CRC 记录的目标。
 3. **落地顺序（回到 §7.4 结论）**：判据③（日志重放 + 载荷语义）是前置，
    否则文件级 CRC 记录既无法重建、又立刻带来 O(M) 次簇 IO 的写放大。
+
+---
+
+## 8. 4Kn 与介质矩阵实测（2026-10-08 追加）
+
+> **本节为追加内容**：§1–§7 一字未改。口径来源：本批「4Kn / 介质矩阵」实测（QEMU 矩阵 + 我们的 FS 真跑），
+> 结果口径由 Lead 提供；本节只登记结果，不改写任何既有结论。
+
+### 8.1 QEMU 8 格矩阵：8/8 全 PASS
+
+- 矩阵 = **512e / 4Kn × HDD / SSD × 有 / 无 TRIM = 8 格** ⇒ **8/8 全 PASS**。`【已实现事实】`
+- **我们的 FS 真跑**（在上述矩阵盘上真建卷、真挂载）：**MBR 8/8**、**GPT 8/8**，退出码 **`rc = 0`**。`【已实现事实】`
+- 范围界定：本节补的是**介质侧格子**的实测。§5 第 4 条与 §2.6 关于 FS 侧
+  `reclaim`/`discard` 与 TRIM 对接的结论**仍按原样保留**，本节不改变它们。`【缺证据】`
+
+### 8.2 修前缺陷（如实记录）：4Kn 下表头与保护性 MBR 落在同一设备块
+
+- **修前（缺陷）**：**4/4 个 4Kn 格**的 `EFI PART`（GPT 表头）落在 **`[512, size − 512]`** 区间
+  ⇒ 表头与保护性 MBR 落在**同一个设备块内部**（4Kn 的设备块 = 4096 B，512 B 偏移仍属第 0 块）✗
+  ⇒ 该设备块一旦写坏，**MBR 与 GPT 表头同损**，块级原子性被破坏。`【已实现事实】`
+- **修后**：主表头落 **设备 LBA1**、备份表头落 **末设备 LBA** ✓。`【已实现事实】`
+- **回归证据**：**512e 格的盘上字节一字不变**（修前 / 修后逐字节相同）✓
+  ⇒ 该修复**只改 4Kn 的落点**，不动 512e 的任何字节。`【已实现事实】`
+
+### 8.3 两份口径更正（以实测为准）
+
+- **`nvme` 设备**：**只能出 4Kn**（给 512 / 4096 仍报 `512/512`）⇒ **512e 只能由 `scsi-hd` /
+  `virtio-blk` 提供**。`【已实现事实】`
+- **`rotation_rate`**：语义是 **RPM**（`1` = SSD 标记、`7200` = HDD、缺省 `0` = 旋转盘）。`【已实现事实】`
+
+### 8.4 结论：整盘型方案 B 在盘 0 不可行
+
+- 我们的分区表要求 **头部 34 个扇区（LBA0..33）＋ 尾部 33 个扇区**的保护带；
+  4Kn 上主表头必须在 **LBA1（设备块 1）**、备份头必须在**末设备 LBA**（§8.2 修后落点）。
+- ⇒ **整盘型方案 B 在盘 0 不可行**（保护性 MBR / 表头与首个数据区在 4Kn 下无法分开落块，
+  §8.2 的修前缺陷即该问题的实测形态）；**方案 C 未批**（无裁定，本节不为其背书）。`【理论推断】`
 
 ---
 
