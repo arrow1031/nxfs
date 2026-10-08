@@ -27,7 +27,7 @@ B8 把文件层地址域 u32→u64、文件头 32→40 B、格式版本统一为
 
 - 先前的 B7 已落地：`stfs_cluster_t` u32→u64；计数/长度/簇内偏移/派生下标仍 u32；
   日志父条目 9→15 B（B9 `e3afefa` 前为 13 B）；镜像索引条目 8→12 B；总账 CRC 覆盖区间 84→100；主总账 88→104 B。
-  `【已实现事实】`（`stfs_journal_layout.h` 的 `stfs_journal_parent_entry_t` / `stfs_journal_index_entry_t`；`stfs_storage_layout.h:288-294`）
+  `【已实现事实】`（`stfs_journal_layout.h` 的 `stfs_journal_parent_entry_t` / `stfs_journal_index_entry_t`；`stfs_storage_layout.h:STFS_STATIC_ASSERT`）
 - **受 B8 影响的结论**：容量上限（u32 计数仍限制单文件字节数）、每操作字节数（文件头
   32→40 B 使每文件元数据抬升）、镜像/索引条目的每项字节数。本文凡涉及者均已在条目内标注。
   `【理论推断】`
@@ -54,49 +54,49 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
 
 - `【已实现事实】` **提交点明确**：COW 引擎按
   A（主体表）→ A1b（分片链）→ A2a（分配）→ A3（换指针）→ A3b（重物化）→ B（构建镜像对象）
-  → A2b（分配）→ **C（写新对象，不可见 `cow.c:1088-1105`）** → **D（总账提交 = 提交点 `cow.c:1107-1129`）**
-  → E（释放旧 `cow.c:1131-1150`）→ F（链提交 `cow.c:1154`）推进；旧数据只在提交点之后释放。
-- `【已实现事实】` **总账双副本 + 交替 ext 槽**：`stfs_meta_ledger_commit`（`ledger.c:797`）
-  取 `slot = ctx->ext_slot ^ 1u`（`ledger.c:852`），`led_write_copy`（`ledger.c:773-795`）
+  → A2b（分配）→ **C（写新对象，不可见 `cow.c:stfs_meta_object_write_prepared()`）** → **D（总账提交 = 提交点 `ledger.c:stfs_meta_ledger_commit()`）**
+  → E（释放旧 `cow.c:stfs_meta_object_free()`）→ F（链提交 `subject.c:stfs_meta_subject_chain_commit()`）推进；旧数据只在提交点之后释放。
+- `【已实现事实】` **总账双副本 + 交替 ext 槽**：`stfs_meta_ledger_commit`（`ledger.c:stfs_meta_ledger_commit()`）
+  取 `slot = ctx->ext_slot ^ 1u`（`ledger.c:stfs_meta_ledger_commit()`），`led_write_copy`（`ledger.c:led_write_copy()`）
   **先写 ext 槽**（`lba+1+slot`）**后写 v1 前缀**（`lba`），v1 前缀 = 提交点；
-  代码注释明确此顺序不可反转（`ledger.c:767-771`）。交替槽的存在使「写 ext 途中掉电」
+  代码注释明确此顺序不可反转（`ledger.c:led_write_copy()`）。交替槽的存在使「写 ext 途中掉电」
   只会污染**非当前**槽。
-- `【已实现事实】` **撕裂写判定**：`led_ext_crosscheck`（`ledger.c:441-468`）要求
+- `【已实现事实】` **撕裂写判定**：`led_ext_crosscheck`（`ledger.c:led_ext_crosscheck()`）要求
   `ext.txn_id == v1.txn_id`，否则判 `CORRUPT` 并注明「半写窗口」；`led_parse_v1`
-  （`ledger.c:354-390`）与 `led_parse_ext`（`ledger.c:392-414`）各自做 magic、
-  `struct_size`、版本域、CRC32C 校验；`stfs_meta_ledger_read_copy`（`ledger.c:560-637`）
+  （`ledger.c:led_parse_v1()`）与 `led_parse_ext`（`ledger.c:led_parse_ext()`）各自做 magic、
+  `struct_size`、版本域、CRC32C 校验；`stfs_meta_ledger_read_copy`（`ledger.c:stfs_meta_ledger_read_copy()`）
   在两个 ext 槽中挑**能过交叉校验**的那个，否则 `ext_valid=0` + `corrupt_code`，
   **不假装表指针可用**。
 - `【已实现事实】` **恢复分片**：pkg 50 有区域级恢复分片（`recover_shard.c`，固定容量登记表、
   去重队列、`STFS_ERR_NO_SPACE` 兜底）；`test_shard_partial.c` 覆盖「某物理区域整片不可读
   ⇒ 只丢该片」。
-- `【缺证据】` **提交链上没有屏障**：`stfs_meta_txn_commit`（`txn.c:282`）**仅在 `if (sync != 0u)`
-  时**调用 `stfs_meta_volume_flush(volume, sync, NULL)`（`txn.c:403-411`）；`cow.c:1088-1154`
+- `【缺证据】` **提交链上没有屏障**：`stfs_meta_txn_commit`（`txn.c:stfs_meta_txn_commit()`）**仅在 `if (sync != 0u)`
+  时**调用 `stfs_meta_volume_flush(volume, sync, NULL)`（`txn.c:stfs_meta_txn_commit()`）；`cow.c:stfs_meta_edit_commit()`
   的 C→D→E→F 之间**没有任何 flush/barrier**。全域检索显示 `stfs_st_flush`/`barrier`
-  只出现在 `30/storage.c`、`05/assembly.c:72`、`40/ledger.c:1844`、`40/meta.h:991`、
+  只出现在 `30/storage.c`、`05/assembly.c:ea_volume_flush()`、`40/ledger.c:stfs_meta_volume_flush()`、`40/meta.h:STFS_META_OPEN_NO_COMMIT_BARRIER`、
   测试与 `tools/*`；**pkg 50 的全部 `.c` 中没有任何 flush/barrier/sync 调用**。
-  ⇒ 结论：**顺序假设依赖设备与驱动的写序，而非显式屏障**；`storage.h:250` 明确
-  「barrier 为 NULL 时可见地降级」，`storage.c:787-792` 仅当宿主提供 barrier 才置
+  ⇒ 结论：**顺序假设依赖设备与驱动的写序，而非显式屏障**；`storage.h:stfs_st_host_fns_t.barrier` 明确
+  「barrier 为 NULL 时可见地降级」，`storage.c:stfs_st_flush()` 仅当宿主提供 barrier 才置
   `device_barrier=1`。因此「ext 先、v1 后」在**无屏障的宿主**上是否真有序，代码无法保证。
 - **本项等级：L2**。可检测（CRC+交叉校验+双副本回退）且可回退（选另一副本），
   但**持久化由调用方 opt-in**，提交链内部无屏障 ⇒ 不满足 L3 「崩溃后必然一致」。
 
 ### 2.2 ② 写原子性与「如实失败」
 
-- `【已实现事实】` **不伪造成功**：`led_write_sector`（`ledger.c:308-352`）在两阶段写语义下
+- `【已实现事实】` **不伪造成功**：`led_write_sector`（`ledger.c:led_write_sector()`）在两阶段写语义下
   把 `QUICK_RETRY_DONE`／`EVENT_LOG_EXHAUSTED`／`APPEND_UNCERTAIN` 一律**按已写处理并标 gap**，
   **绝不对同一笔写重发**。
-- `【已实现事实】` **不确定态如实上抛**：`txn.c:299-305` 的 UNCERTAIN 返回
-  `STFS_ERR_INTEGRITY_UNCERTAIN` 而非可重试错误；`txn.c:320` 支持幂等重提交；
-  `txn.c:348-369` 把三类失败分开处置并触发镜像重同步，**绝不出现半新半旧**。
-- `【已实现事实】` **副总账失败不掩埋**：`ledger.c:878-882` 副总账写失败只置
+- `【已实现事实】` **不确定态如实上抛**：`txn.c:stfs_meta_txn_commit()` 的 UNCERTAIN 返回
+  `STFS_ERR_INTEGRITY_UNCERTAIN` 而非可重试错误；`txn.c:stfs_meta_txn_commit()` 支持幂等重提交；
+  `txn.c:stfs_meta_txn_commit()` 把三类失败分开处置并触发镜像重同步，**绝不出现半新半旧**。
+- `【已实现事实】` **副总账失败不掩埋**：`ledger.c:stfs_meta_ledger_commit()` 副总账写失败只置
   `secondary_behind=1`／`ledger_degraded=1`，主副本已提交的事实照旧成立。
-- `【已实现事实】` **读侧不把 0 当有效数据**：`st_repair_read_error`（`storage.c:864-899`）
+- `【已实现事实】` **读侧不把 0 当有效数据**：`st_repair_read_error`（`storage.c:st_repair_read_error()`）
   在重读失败后 `memset 0` 再写回以触发固件重映射，并**故意不补写簇头 CRC**
-  （`storage.c:887` 注释「避免把 0 伪装成有效数据」）。`storage.c:1360-1373` 的
-  读改写路径在载荷不可验证且非全 0 时**拒绝写**；`storage.c:1400-1402` 在 gap≠0 时置
+  （`storage.c:st_repair_read_error()` 注释「避免把 0 伪装成有效数据」）。`storage.c:stfs_st_cluster_write_headed()` 的
+  读改写路径在载荷不可验证且非全 0 时**拒绝写**；`storage.c:stfs_st_cluster_write_headed()` 在 gap≠0 时置
   `integrity_gap`。
-- `【已实现事实】` **只读闸门**：`stfs_meta_write_allowed`（`ledger.c:76`）作为写入口的统一
+- `【已实现事实】` **只读闸门**：`stfs_meta_write_allowed`（`ledger.c`）作为写入口的统一
   判据。
 - **本项等级：L3**（就「诚实失败」这一维度而言）。这是当前实现最扎实的一项：
   失败被显式分类、不被静默吞掉、不允许假绿。
@@ -104,25 +104,25 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
 ### 2.3 ③ 元数据完整性校验
 
 - `【已实现事实】` **CRC 覆盖面**：主总账 v1 前缀 CRC32C 覆盖 `[0, offsetof(crc32c))`
-  （`ledger.c:354-390`，B7 后为 100 B）；ext 槽 CRC32C（`ledger.c:392-414`）；
-  位图头部 CRC 覆盖 `[0, 68)`（`storage.h:978`、`stfs_storage_layout.h:168`）；
-  位图分片 CRC 覆盖 `[0, 560)`（`stfs_storage_layout.h:186`）；**每个数据簇的整簇载荷
-  CRC32C**（`stfs_storage_layout.h:102-105`，8 B 簇头 = `{crc32c, flags}`，
-  CRC 覆盖 `[8, cluster_size)`）；文件块 v2 头 16 B 自带自校验 CRC（`meta.h:622-689`）；
+  （`ledger.c:led_parse_v1()`，B7 后为 100 B）；ext 槽 CRC32C（`ledger.c:led_parse_ext()`）；
+  位图头部 CRC 覆盖 `[0, 68)`（`storage.h:stfs_st_bitmap_header_crc()`、`stfs_storage_layout.h:stfs_storage_bitmap_header_t.crc32c`）；
+  位图分片 CRC 覆盖 `[0, 560)`（`stfs_storage_layout.h:stfs_storage_bitmap_shard_t.crc32c`）；**每个数据簇的整簇载荷
+  CRC32C**（`stfs_storage_layout.h:stfs_storage_cluster_head_t`，8 B 簇头 = `{crc32c, flags}`，
+  CRC 覆盖 `[8, cluster_size)`）；文件块 v2 头 16 B 自带自校验 CRC（`meta.h:STFS_META_FILE_BLOCK_V2_OFF_CRC`）；
   日志头记录 CRC 覆盖 `[0, head_bytes−4)`（`stfs_journal_layout.h:STFS_JOURNAL_HEAD_CRC_BYTES`／`STFS_JOURNAL_HEAD_CRC_TRAILER_BYTES`，头部布局注释）。
   CRC 本体统一复用 pkg 20 `stfs_sp_crc32c`（软件/硬件两路已由 AC-20.13 交叉验证），
-  **不另写多项式**（`storage.h:960`、`stfs_storage_layout.h:91`）。 `【已实现事实】`
+  **不另写多项式**（`storage.h` §14 注释（复用包 20 的 `stfs_sp_crc32c()`）、`stfs_storage_layout.h:stfs_storage_cluster_head_t` §2 注释）。 `【已实现事实】`
 - `【已实现事实】` **结构性闸门不靠 CRC 兜底**：`struct_size != sizeof` ⇒
-  `STFS_ERR_NOT_SUPPORTED`（`ledger.c:354-390`）；版本域、`boot_entry_count ≤ 4`、
+  `STFS_ERR_NOT_SUPPORTED`（`ledger.c:led_parse_v1()`）；版本域、`boot_entry_count ≤ 4`、
   `cluster_size ∈ {4096,16384,65536}` 均在解析期拒绝；ext 的 `format_flags`/`reserved`
-  必须为 0（`ledger.c:392-414`）；指针与计数的一致性、容量与边界字段的一致性由
-  `led_ext_crosscheck`（`ledger.c:441-468`）与 `journal_layout.c:209`
+  必须为 0（`ledger.c:led_parse_ext()`）；指针与计数的一致性、容量与边界字段的一致性由
+  `led_ext_crosscheck`（`ledger.c:led_ext_crosscheck()`）与 `journal_layout.c:jr_prefix_consistent()`
   （「容量必须等于由边界字段推出的值，不许自说自话」）分别钉住。
 - `【已实现事实】` **退役与不兼容对象**：v1 整表路径
-  `STFS_META_MIRROR_SUBJECT` 在 `cow.c:865-870` 直接返回 `STFS_ERR_NOT_SUPPORTED`
+  `STFS_META_MIRROR_SUBJECT` 在 `cow.c:edit_build_mirror_objects()` 直接返回 `STFS_ERR_NOT_SUPPORTED`
   （已退役，不静默走老路）。
 - `【缺证据】` **pkg 40 不在宿主分配通道上校验 `struct_size`**；`led_parse_v1`
-  对 CRC 计算两次（`ledger.c:371` 与 `:374`）——前者是冗余不是缺陷，但说明该路径
+  对 CRC 计算两次（`ledger.c:led_parse_v1()` 内先 `led.crc32c != stfs_sp_crc32c(...)`、后又 `crc = stfs_sp_crc32c(...)` 再比一次）——前者是冗余不是缺陷，但说明该路径
   未经「一次计算」审计。
 - **本项等级：L3**。元数据层 CRC + magic + struct_size + 版本 + 交叉一致性齐备，
   且覆盖到**数据簇载荷**（见 2.5）。
@@ -130,22 +130,22 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
 ### 2.4 ④ 介质故障冗余（副本 / RAID / 擦除码 / 镜像）
 
 - `【已实现事实】` **盘上真实冗余只有两处**：
-  ① 总账主 + 副副本，交替 ext 槽，带 `stfs_meta_ledger_repair`（`ledger.c:889-922`）
-  与 `stfs_meta_ledger_verify`（`ledger.c:924+`，含 `primary_ok`/`secondary_ok`/
+  ① 总账主 + 副副本，交替 ext 槽，带 `stfs_meta_ledger_repair`（`ledger.c:stfs_meta_ledger_repair()`）
+  与 `stfs_meta_ledger_verify`（`ledger.c:stfs_meta_ledger_verify()`，含 `primary_ok`/`secondary_ok`/
   `txn_id_match`/`copies_differ` 与最高到 `STFS_CHECK_FULL` 的等级）；
-  ② **分区表镜像** `d0_gpt_verify_mirror`（`D0-卷与分区管理\d0_part_table.h:284`）。
-- `【已实现事实】` **`MIRROR_*` 不是副本**。`meta_internal.h:38-44` 定义
+  ② **分区表镜像** `d0_gpt_verify_mirror`（`D0-卷与分区管理\d0_part_table.h:d0_gpt_verify_mirror()`）。
+- `【已实现事实】` **`MIRROR_*` 不是副本**。`meta_internal.h:STFS_META_MIRROR_*` 定义
   `STFS_META_MIRROR_NONE/SUBJECT/SNAPSHOT/SUBVOL/SUBJECT_ROOT/SUBJECT_SHARD`，
-  `meta_internal.h:63` 是 `uint32_t mirror`；`edit_build_mirror_objects`
-  （`cow.c:784-904`）用 `switch (o->mirror)` 决定**该编辑对象是哪个源对象的落盘像**：
-  `SUBJECT_ROOT`（`cow.c:796`，构建主体表根索引对象）、`SUBJECT_SHARD`（`cow.c:854`，
-  1 簇数据分片）、`SNAPSHOT`（`cow.c:871`）、`SUBVOL`（`cow.c:877`）、
-  `SUBJECT`（`cow.c:865-870`，已退役）。
+  `meta_internal.h:stfs_meta_edit_object_t.mirror` 是 `uint32_t mirror`；`edit_build_mirror_objects`
+  （`cow.c:edit_build_mirror_objects()`）用 `switch (o->mirror)` 决定**该编辑对象是哪个源对象的落盘像**：
+  `SUBJECT_ROOT`（构建主体表根索引对象）、`SUBJECT_SHARD`（
+  1 簇数据分片）、`SNAPSHOT`、`SUBVOL`、
+  `SUBJECT`（已退役）。
   ⇒ **`MIRROR_*` 是 COW 载荷内的「对象种类判别符」，不是可独立校验的第二份拷贝，
   也不是临时缓冲。** `MIRROR_BYTES(4096)` 指的是主体表**落盘像的缓冲区字节数**，
   与冗余无关。 `【已实现事实】`
 - `【已实现事实】` 主体表**没有**第二份拷贝：主体表是「根索引对象 + 脏分片」的**单一**逻辑
-  结构（`cow.c:796`/`:854`），不存在两份内容相同、可互校的表。
+  结构（`cow.c:edit_table_payload_len()`/`cow.c:edit_build_mirror_objects()`），不存在两份内容相同、可互校的表。
 - **本项等级：L1**。文件数据与元数据**均无盘内冗余**；RAID/擦除码完全不在本文件系统内。
   这与人类设定的「介质冗余交给低层 RAID 卡」一致——即本 FS **有意**不做介质冗余，
   现状与设计口径互相吻合（见 §6.4 分层契约）。
@@ -154,18 +154,18 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
 ### 2.5 ⑤ 静默损坏检测与修复
 
 - `【已实现事实】` **读路径逐簇校验**：`stfs_st_sector_read`→`stfs_st_cluster_verify`
-  （`storage.c:827-848`）；`verify == STFS_VERIFY_NONE` 时**跳过** CRC（`storage.c:834`）；
+  （`storage.c:st_load_cluster()`）；`verify == STFS_VERIFY_NONE` 时**跳过** CRC；
   失败时填 `bad_lba`/`bad_cluster`/`crc_expected`/`crc_actual`、`stats.crc_failures++`、
-  返回 `STFS_ERR_CORRUPT`（`storage.c:838-846`）。文件层读取
-  （`file.c:348`、`:556`、`:1554`，含 `file_block_read_hdr` `file.c:340-353`）
+  返回 `STFS_ERR_CORRUPT`（`storage.c:st_load_cluster()`）。文件层读取
+  （`file.c:file_block_read_hdr()`、`file.c:file_reader_read()`、`file.c:file_map_load()`（定义在后段，前段是先声明））
   **默认 `STFS_VERIFY_CRC32C`**。
-- `【已实现事实】` **写路径每次落盘都封 CRC**：`storage.c:1390` 在扇区写前
-  `stfs_st_cluster_seal`；`storage.c:984-1010`、`:1471` 亦封。⇒ 校验覆盖率 = 全部
+- `【已实现事实】` **写路径每次落盘都封 CRC**：`storage.c:stfs_st_cluster_write_headed()` 在扇区写前
+  `stfs_st_cluster_seal`；`storage.c:st_write_cluster_span()`、`storage.c:stfs_st_cluster_init()` 亦封。⇒ 校验覆盖率 = 全部
   经本层写出的数据簇。
 - `【已实现事实】` **修复只到「触发固件重映射」这一级**：`st_repair_read_error`
-  （`storage.c:864-899`）重读 → 仍失败则清零并写回。它**不重建内容**，因为
+  （`storage.c:st_repair_read_error()`）重读 → 仍失败则清零并写回。它**不重建内容**，因为
   **没有第二份数据可依据**（见 2.4）。⇒ **检测 ≠ 修复**，此处必须如实分开说。
-- `【缺证据】` **没有在线 scrub / 自愈守护**：`stfs_meta_fs_check`（`ledger.c:1896`）
+- `【缺证据】` **没有在线 scrub / 自愈守护**：`stfs_meta_fs_check`（`ledger.c:stfs_meta_fs_check()`）
   存在，但其扫描范围（是否遍历数据簇、命中不一致后做什么）**未能确认**；
   `30-存储抽象层\storage_badsector.c`、`storage_smart.c` 的存在说明有坏道/SMART 通道，
   但**是否构成定期巡检与自愈回路，本次未能取得可指认证据**。故本项判为
@@ -174,16 +174,16 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
 
 ### 2.6 ⑥ 误删除与回滚
 
-- `【已实现事实】` 存在快照与子卷的对象种类（`STFS_META_MIRROR_SNAPSHOT` `cow.c:871`、
-  `STFS_META_MIRROR_SUBVOL` `cow.c:877`），COW 机制本身在提交前保留旧对象
-  （`cow.c:1131-1150` 之后才释放），⇒ **在提交点之前具备天然的「未生效即回滚」**。
-- `【已实现事实】` **回收受授权闸门约束**：`cow.c:1006-1022` 的回收授权仅对
-  「挂载已授权」的会话开放；`cow.c:1078-1079` 的自耗回收记录避免循环回收。
+- `【已实现事实】` 存在快照与子卷的对象种类（`STFS_META_MIRROR_SNAPSHOT`、
+  `STFS_META_MIRROR_SUBVOL`），COW 机制本身在提交前保留旧对象
+  （`cow.c:stfs_meta_object_free()` 之后才释放），⇒ **在提交点之前具备天然的「未生效即回滚」**。
+- `【已实现事实】` **回收受授权闸门约束**：`cow.c:stfs_meta_edit_commit()` 的回收授权仅对
+  「挂载已授权」的会话开放；自耗回收记录避免循环回收。
 - `【已实现事实】` 簇状态机 `USED --批量回收--> DELAYED --释放条件满足--> FREE --分配--> USED`
-  （`stfs_block_alloc.h:146`）；回收**按 extent 批量**，`free.c:10,131` 明确
-  「批次数 == extent 数 ≪ 簇数」，并可由 trace 计数证伪（`test_reserve_grow.c:386`
+  （`stfs_block_alloc.h:stfs_cluster_state`）；回收**按 extent 批量**，`free.c:stfs_reclaim_extents()`（文件头注释同述）明确
+  「批次数 == extent 数 ≪ 簇数」，并可由 trace 计数证伪（`test_reserve_grow.c:case_ac_70_7()`
   有负对照「逐簇实现必红」）；预留回收要求**时间 ∧ 使用率双条件同时满足**，
-  只满足其一则**一个簇都不回收**并给出原因码（`stfs_block_alloc.h:524-536`）。
+  只满足其一则**一个簇都不回收**并给出原因码（`stfs_block_alloc.h:stfs_reserve_reclaim_reason_t`）。
 - `【缺证据】` **用户可见的「误删恢复」路径**（只读挂载回滚、快照挂载取回、误删回收站）
   本次未取得端到端证据；快照/子卷的**读回**语义在 pkg 60/90 侧，未评估。
   `reclaim`/`discard` 与 TRIM 的对接亦未取得证据。
@@ -192,22 +192,22 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
 
 ### 2.7 ⑦ 降级与安全兜底
 
-- `【已实现事实】` **只读降级**：`stfs_meta_write_allowed`（`ledger.c:76`）为写入口统一判据；
+- `【已实现事实】` **只读降级**：`stfs_meta_write_allowed`（`ledger.c`）为写入口统一判据；
   `stfs_journal_open` 在总账主副本坏且调用方未显式同意降级时返回
-  `STFS_ERR_LEDGER_PRIMARY_CORRUPT` 并**仍填好恢复报告**（`journal.h:351-361`、
-  `recover.c:33`），降级需显式 `consent_degrade`（`recover.c:113-116`）；
+  `STFS_ERR_LEDGER_PRIMARY_CORRUPT` 并**仍填好恢复报告**（`journal.h:stfs_journal_open()`、
+  `recover.c:stfs_journal_ledger_probe()`），降级需显式 `consent_degrade`（`recover.c:stfs_journal_ledger_probe()`）；
   两份总账皆不可信 ⇒ `STFS_ERR_LEDGER_SECONDARY_CORRUPT`（终局）；无根日志区 ⇒
-  `STFS_ERR_RECOVERY_REQUIRED`（`recover.c:210-215`）。
+  `STFS_ERR_RECOVERY_REQUIRED`（`recover.c:stfs_journal_open()`）。
 - `【已实现事实】` **非法输入拒绝**：日志区分配任何一条不满足即 `STFS_ERR_NO_SPACE`，
-  「**绝不返回一个『差不多』的位置**」（`journal.h:427-431`）；区划划分要求恰好覆盖
+  「**绝不返回一个『差不多』的位置**」（`journal.h:stfs_journal_plan_alloc()`）；区划划分要求恰好覆盖
   数据区且每片首簇在数据区内，否则 `STFS_ERR_INVALID_ARG`
-  （`test_zone_plan.c:258,326,397`）；无屏障原语 ⇒ 可见降级而非假装有屏障
-  （`storage.h:250`）。
-- `【已实现事实】` **边界溢出拒绝**：`test_reserve_grow.c:569` 钉住「949+1 == 950 允许；
-  950+1 == 951 拒绝 ⇒ 最多用到 95%」；`test_main.c:1074-1083` 钉住日志容量用满
+  （`test_zone_plan.c:zp_test_zone_plan_consume()`）；无屏障原语 ⇒ 可见降级而非假装有屏障
+  （`storage.h:stfs_st_host_fns_t.barrier`）。
+- `【已实现事实】` **边界溢出拒绝**：`test_reserve_grow.c:case_ac_70_9()` 钉住「949+1 == 950 允许；
+  950+1 == 951 拒绝 ⇒ 最多用到 95%」；`test_main.c:test_extra_boundaries()` 钉住日志容量用满
   ⇒ `STFS_ERR_JOURNAL_FULL`（**不偷偷扩容**）。
 - `【缺证据】` **已有已知缺陷**（先于本次评估、非本次引入）：向 `volume_open` 传非法设备名
-  **会崩溃**（`F:\Workspace\.tools\C5-写路径计划.md:80`、`:114`、`:145`）。
+  **会崩溃**（`F:\Workspace\.tools\C5-写路径计划.md` §4「候选缺口」、§M5 侦察「已知坑」、§M5 已落地「如实记录不阻断三点」）。
   这与「非法输入必须被拒」的口径相冲突，应记为已知风险。
 - **本项等级：L3**。拒绝语义在代码与测试两侧都有独立支撑，是本实现第二扎实的一项。
 
@@ -239,21 +239,21 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
 
 | 操作 | 复杂度 / IO 计数 | 证据 |
 |---|---|---|
-| 挂载 | 读 v1 前缀 + 扫 2 个 ext 槽取交叉校验通过者，再读表根；常数次（≈4–8 次 IO），不随卷大小增长 | `ledger.c:560-637`、`:639-761` |
-| 目录定位 | **O(深度)** 次头记录读（`head_reads = depth + 1`），**不扫描日志、不依赖日志规模** | `journal.h:294-295`、`:338-345` |
-| 枚举 | 主体表「根索引 + 分片」直取，非全表扫描 | `cow.c:796`、`:854` |
-| 创建/删除（元数据事务） | COW 十阶段，随机 IO 量级 ≈ 每主体表项 1 次对象写 + 分配记账 + **总账提交 2 笔扇区写（ext 槽 + v1 前缀）**；`【理论推断】` K ≈ 4–8 次随机 IO | `cow.c:979`、`:1088-1154`；`ledger.c:773-795` |
-| 读 | 逐簇 1 次簇读 + 整簇 CRC 校验；块地址由 v2 位置映射 O(1) 取得（v1 哈希链读路径已删除） | `storage.c:827-848`；`file.c:364-379`、`:355-362` |
-| 写 | COW：受影响簇读改写（`storage.c:1360-1403`）+ 新簇写；**每 N 字节新数据 ≈ N 字节数据 + 元数据对象** | `storage.c:1360-1403`、`:1390` |
-| 元数据分配 | 每簇 **2 bit** 状态码（空闲／已用·非本会话／本会话已发出／本会话保留），bitmap 放**调用方提供的 scratch**，本包不自分配 | `stfs_block_alloc.h:684`、`:852`、`:648` |
-| 分配查找 | **next-fit**：自 `cursor` 起顺序找一段连续 count 簇并回绕 ⇒ 平均 O(1)、最坏 O(总簇数)；候选段做**逐簇**坏道裁决（`stfs_st_cluster_is_bad`）⇒ 每次分配 O(count) 次位图查询 | `alloc_run.c:49-78`、`:62-68`；`alloc_state.c:124`；`stfs_block_alloc.h:573`、`:624` |
-| 回收 | **按 extent 批量**，批次数 == extent 数 ≪ 簇数（有负对照防退化） | `free.c:10`、`:131`；`test_reserve_grow.c:386` |
-| 日志追加 | **每条记录 = 1 次头簇读 + 1 次头簇写**（走溢出段再 +2 次簇 IO） ⇒ **O(M) 条记录 = O(M) 次簇 IO，无批处理** | `journal.h:304` |
+| 挂载 | 读 v1 前缀 + 扫 2 个 ext 槽取交叉校验通过者，再读表根；常数次（≈4–8 次 IO），不随卷大小增长 | `ledger.c:stfs_meta_ledger_read_copy()`、`ledger.c:stfs_meta_ledger_load()` |
+| 目录定位 | **O(深度)** 次头记录读（`head_reads = depth + 1`），**不扫描日志、不依赖日志规模** | `journal.h:stfs_journal_locate()`、`journal.h:stfs_journal_location_t.head_reads` |
+| 枚举 | 主体表「根索引 + 分片」直取，非全表扫描 | `cow.c:edit_table_payload_len()`、`cow.c:edit_build_mirror_objects()` |
+| 创建/删除（元数据事务） | COW 十阶段，随机 IO 量级 ≈ 每主体表项 1 次对象写 + 分配记账 + **总账提交 2 笔扇区写（ext 槽 + v1 前缀）**；`【理论推断】` K ≈ 4–8 次随机 IO | `cow.c:edit_alloc_objects()`、`cow.c:stfs_meta_edit_commit()`；`ledger.c:led_write_copy()` |
+| 读 | 逐簇 1 次簇读 + 整簇 CRC 校验；块地址由 v2 位置映射 O(1) 取得（v1 哈希链读路径已删除） | `storage.c:st_load_cluster()`；`file.c:file_map_load()`、`file.c`（R1-v1 退役注释：`file_chain_validate()` 已删除） |
+| 写 | COW：受影响簇读改写（`storage.c:stfs_st_cluster_write_headed()`）+ 新簇写；**每 N 字节新数据 ≈ N 字节数据 + 元数据对象** | `storage.c:stfs_st_cluster_write_headed()` |
+| 元数据分配 | 每簇 **2 bit** 状态码（空闲／已用·非本会话／本会话已发出／本会话保留），bitmap 放**调用方提供的 scratch**，本包不自分配 | `stfs_block_alloc.h:STFS_BLK_ALLOC_SCRATCH_BYTES`（含 `STFS_BLK_LOCK(scratch_is_two_bits_per_cluster, …)`）、`stfs_block_alloc.h:stfs_blk_alloc_options_t.scratch` |
+| 分配查找 | **next-fit**：自 `cursor` 起顺序找一段连续 count 簇并回绕 ⇒ 平均 O(1)、最坏 O(总簇数)；候选段做**逐簇**坏道裁决（`stfs_st_cluster_is_bad`）⇒ 每次分配 O(count) 次位图查询 | `alloc_run.c:blk_pick_run()`；`alloc_state.c:blk_bad_pass()`；`stfs_block_alloc.h`「批 70-F」权属注释、`stfs_block_alloc.h:stfs_blk_bad_query_fn`（R2 坏道判据） |
+| 回收 | **按 extent 批量**，批次数 == extent 数 ≪ 簇数（有负对照防退化） | `free.c` 文件头注释、`free.c:stfs_reclaim_extents()`；`test_reserve_grow.c:case_ac_70_7()` |
+| 日志追加 | **每条记录 = 1 次头簇读 + 1 次头簇写**（走溢出段再 +2 次簇 IO） ⇒ **O(M) 条记录 = O(M) 次簇 IO，无批处理** | `journal.h:stfs_journal_entry_append()` |
 
 ### 3.2 同步点计数
 
 - `【已实现事实】` **提交内部 0 个屏障**：`stfs_meta_txn_commit` 只在 `sync != 0` 时调
-  `stfs_meta_volume_flush`（`txn.c:403-411`）；`cow.c`、`ledger.c` 的提交路径内部
+  `stfs_meta_volume_flush`（`txn.c:stfs_meta_txn_commit()`）；`cow.c`、`ledger.c` 的提交路径内部
   无 flush/barrier（全域检索：pkg 50 的 `.c` 中零调用）。
 - `【理论推断】` ⇒ 量级结论要分两种口径：
   (a) **`sync=0`（默认口径）**：吞吐**不受屏障限制**，但持久性由调用方承担
@@ -278,7 +278,7 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
 ### 3.4 并发与缓存
 
 - `【已实现事实】` **全树没有任何互斥原语**：`pthread_mutex`/自旋锁/`InterlockedCompareExchange`
-  在全树 `.c` 中**零命中**；唯一的原子操作在 `80-翻译层与热缓存\ring.c:19-20`
+  在全树 `.c` 中**零命中**；唯一的原子操作在 `80-翻译层与热缓存\ring.c:TL_STATE_*`
   （`__atomic_store_n(..., RELEASE)` / `__atomic_load_n(..., ACQUIRE)`），
   另有 `verify/carriers/wm_probe.c`（测试载体）。
   ⇒ **一致性模型是单线程提交 + 一个无锁单写者环**；**没有多核扩展性**，
@@ -301,10 +301,10 @@ L3 工业级（冗余+自愈）· L4 高可靠（多副本+校验+在线重构�
 
 ### 3.6 两大性能瓶颈（结论）
 
-1. **COW 元数据重建无批处理**：每笔元数据事务重建对象（`cow.c:1088-1154`），
+1. **COW 元数据重建无批处理**：每笔元数据事务重建对象（`cow.c:stfs_meta_edit_commit()`），
    且提交链内无写合并/回写聚合 ⇒ 写放大由 K 决定，K 只靠 O(1) 查找与按 extent
    回收部分抵消。
-2. **日志逐条读改写头簇**：`journal.h:304` 明确「追加一条 = 1 次头读 + 1 次头写」
+2. **日志逐条读改写头簇**：`journal.h:stfs_journal_entry_append()` 明确「追加一条 = 1 次头读 + 1 次头写」
    ⇒ 记录数 M 的代价是 O(M) 次簇 IO，且每条 15 B 却整簇搬 4 KiB（B9 `e3afefa` 前为 13 B）。
    **这对人类提议的「每更新追加一条 CRC」方案是决定性成本**（见 §7.4）。
 
@@ -329,7 +329,7 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 2. **无屏障宿主的真实写序**：`cow.c` C→D、`ledger.c` ext→v1 的顺序在无 barrier 宿主上
    是否成立，代码无法保证；交替 ext 槽能覆盖「撕裂」但**不排除「重排」**。
    ⇒ 应用真机 + 断电注入验证。
-3. **`stfs_meta_fs_check`（`ledger.c:1896`）的扫描范围与动作未确认**：是否遍历数据簇、
+3. **`stfs_meta_fs_check`（`ledger.c:stfs_meta_fs_check()`）的扫描范围与动作未确认**：是否遍历数据簇、
    命中不一致后是报告还是修复，未能取得可指认证据。
 4. **pkg 60/90/A0/B0 未评估**：快照/子卷读回、误删恢复的用户可见路径、TRIM/discard
    对接均未证实。
@@ -340,7 +340,7 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
    **容量上限与「每操作字节数」的结论会变**（文件头 40 B、条目 12 B 等已定，
    但计数域是否一并放宽会直接改变单文件/单卷上限）。
 8. **pkg 40 不在宿主分配通道校验 `struct_size`**；`led_parse_v1` 对 CRC 算两次
-   （`ledger.c:371`、`:374`）。
+   （`ledger.c:led_parse_v1()` 内两次 CRC 比较）。
 9. **格式版本策略**：已裁定「永远 = 1，无 V1/V2/V3 兼容」⇒ 任何盘上格式改动都
    **没有版本判别分支可依靠**，只能靠 `struct_size`/自描述字段（如
    `prefix_bytes`、`entry_stride`）区分。这对 §7 的成本评估是关键约束。
@@ -358,24 +358,24 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 
 **① 哪些结构有 CRC、是否覆盖文件数据块**
 
-- 有 CRC 的结构：主总账 v1 前缀（`ledger.c:354-390`）、总账 ext 槽（`:392-414`）、
-  位图头部（`storage.h:978` / `stfs_storage_layout.h:168`）、位图分片（`:186`）、
+- 有 CRC 的结构：主总账 v1 前缀（`ledger.c:led_parse_v1()`）、总账 ext 槽（`ledger.c:led_parse_ext()`）、
+  位图头部（`storage.h:stfs_st_bitmap_header_crc()` / `stfs_storage_layout.h:stfs_storage_bitmap_header_t.crc32c`）、位图分片（`stfs_storage_layout.h:stfs_storage_bitmap_shard_t.crc32c`）、
   日志头记录（`stfs_journal_layout.h:STFS_JOURNAL_HEAD_CRC_BYTES`）、日志父条目 1 B `check`
   （`stfs_journal_layout.h:stfs_journal_parent_entry_t.check`，仅 CRC32C 低 8 位）、文件块 v2 头 16 B 自校验
-  （`meta.h:622-689`）、**每个数据簇的整簇载荷**（`stfs_storage_layout.h:102-105`）。
-- **文件数据块：已覆盖。** 数据簇 CRC32C 由 pkg 30 在**每次写**时封（`storage.c:1390`、
-  `:984-1010`、`:1471`），**每次读**时校验（`storage.c:827-848`），文件层读取默认
-  `STFS_VERIFY_CRC32C`（`file.c:348`、`:556`、`:1554`）。
-  `meta.h:1101` 亦声明「数据簇的簇头 CRC 由包 30 校验」。
+  （`meta.h:STFS_META_FILE_BLOCK_V2_OFF_CRC`）、**每个数据簇的整簇载荷**（`stfs_storage_layout.h:stfs_storage_cluster_head_t`）。
+- **文件数据块：已覆盖。** 数据簇 CRC32C 由 pkg 30 在**每次写**时封（`storage.c:stfs_st_cluster_write_headed()`、
+  `storage.c:st_write_cluster_span()`、`storage.c:stfs_st_cluster_init()`），**每次读**时校验（`storage.c:st_load_cluster()`），文件层读取默认
+  `STFS_VERIFY_CRC32C`（`file.c:file_block_read_hdr()`、`file.c:file_reader_read()`、`file.c:file_map_load()`（定义在后段））。
+  `meta.h:stfs_meta_object_load_reported()` 亦声明「数据簇的簇头 CRC 由包 30 校验」。
   **⇒ 关键结论：文件数据块的完整性检测今天已经具备，且不在日志里，而在簇头里。**
   `【已实现事实】`
 
 **② `MIRROR_*` 是独立可校验第二副本，还是缓冲/其它用途**
 
 - **都不是副本，也不是缓冲。** 它是 COW 编辑对象的**种类判别符**：
-  `meta_internal.h:38-44` 定义 `NONE/SUBJECT/SNAPSHOT/SUBVOL/SUBJECT_ROOT/SUBJECT_SHARD`，
-  字段为 `uint32_t mirror`（`meta_internal.h:63`），
-  `edit_build_mirror_objects`（`cow.c:784-904`）以 `switch (o->mirror)` 决定
+  `meta_internal.h:STFS_META_MIRROR_*` 定义 `NONE/SUBJECT/SNAPSHOT/SUBVOL/SUBJECT_ROOT/SUBJECT_SHARD`，
+  字段为 `uint32_t mirror`（`meta_internal.h:stfs_meta_edit_object_t.mirror`），
+  `edit_build_mirror_objects`（`cow.c:edit_build_mirror_objects()`）以 `switch (o->mirror)` 决定
   **本对象承载哪个源对象的落盘像**（根索引 / 脏分片 / 快照表 / 子卷表）。
   `MIRROR_BYTES(4096)` = **主体表落盘像的缓冲区字节数**（大小计算），不是冗余。
   `【已实现事实】`
@@ -388,17 +388,17 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
   ——只记「子文件夹日志区起始簇号 / 大小 / 状态 / 类型 / 1 B 校验」，
   **不含任何被保护对象的载荷副本**。
   头前缀 80 B 记身份与边界（`folder_id`/`parent_folder_id`/`parent_slot`/`generation` 等，
-  `:233-254`），亦无载荷。
-  `50/checkpoint.c:14` 明确「重放不解释载荷」；`stfs_journal_replay_timed`
-  （`checkpoint.c:516`）只做读+校验+计数。
+  `stfs_journal_layout.h:stfs_journal_head_prefix_t`），亦无载荷。
+  `50/checkpoint.c` 文件头注释第 3 条明确「重放不解释载荷」；`stfs_journal_replay_timed`
+  （`checkpoint.c:stfs_journal_replay_timed()`）只做读+校验+计数。
   **⇒ 日志只重复「元数据变更的意图/位置」，不重复数据。** `【已实现事实】`
 
 ### 6.2 能力判定：元数据 vs 文件数据
 
 | | 检测能到哪一步 | 能**修复**吗 | 依据 |
 |---|---|---|---|
-| **元数据** | 可**定位到具体结构**（总账/位图头/位图分片/日志头/表分片各有 CRC 与 magic/struct_size/版本/交叉校验）；可判「撕裂写（半写窗口）」 | **仅总账可修**（主/副 + `stfs_meta_ledger_repair` `ledger.c:889-922`）。**主体表/索引表不可修**——它们是单一逻辑结构（`cow.c:796`/`:854`），**没有第二份内容可依据** | `ledger.c:441-468`、`:560-637`、`:889-922`；`cow.c:796`、`:854` |
-| **文件数据** | 可**定位到簇（LBA）**：`bad_lba`/`bad_cluster`/`crc_expected`/`crc_actual`（`storage.c:838-846`）；由 file.c 的读上下文可归属到文件 | **不可修**。只有「重读 → 仍失败则清零并写回以触发固件重映射」（`storage.c:864-899`），**不重建内容**，且刻意不补写簇头 CRC 以免把 0 当有效数据（`:887`） | `storage.c:827-848`、`:864-899` |
+| **元数据** | 可**定位到具体结构**（总账/位图头/位图分片/日志头/表分片各有 CRC 与 magic/struct_size/版本/交叉校验）；可判「撕裂写（半写窗口）」 | **仅总账可修**（主/副 + `ledger.c:stfs_meta_ledger_repair()`）。**主体表/索引表不可修**——它们是单一逻辑结构（`cow.c:edit_table_payload_len()`/`cow.c:edit_build_mirror_objects()`），**没有第二份内容可依据** | `ledger.c:led_ext_crosscheck()`、`ledger.c:stfs_meta_ledger_read_copy()`、`ledger.c:stfs_meta_ledger_repair()`；`cow.c:edit_table_payload_len()`、`cow.c:edit_build_mirror_objects()` |
+| **文件数据** | 可**定位到簇（LBA）**：`bad_lba`/`bad_cluster`/`crc_expected`/`crc_actual`（`storage.c:st_load_cluster()`）；由 file.c 的读上下文可归属到文件 | **不可修**。只有「重读 → 仍失败则清零并写回以触发固件重映射」（`storage.c:st_repair_read_error()`），**不重建内容**，且刻意不补写簇头 CRC 以免把 0 当有效数据（`storage.c:st_repair_read_error()`） | `storage.c:st_load_cluster()`、`storage.c:st_repair_read_error()` |
 
 **⇒ 「可检测」≠「可修复」。修复必须有第二份（副本或奇偶/擦除码）。
 当前盘上只有两处第二份：总账双副本、GPT 分区表镜像。其余一律不可修。**
@@ -409,14 +409,14 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 
 1. **元数据侧可修复冗余**：主体表（根索引/分片）、日志头、位图分片都只有单份。
    要有「元数据级可修复冗余」，需为其引入**第二份或待重建的辅助数据**。
-2. **危险状态抢救行为**：目前有「只读降级」（`stfs_meta_write_allowed` `ledger.c:76`、
+2. **危险状态抢救行为**：目前有「只读降级」（`stfs_meta_write_allowed`、
    `stfs_journal_open` 的 `STFS_ERR_LEDGER_PRIMARY_CORRUPT` + `consent_degrade`
-   `recover.c:113-116`），但**没有**：只读抢救挂载（尽最大可能读出、跳过坏块并记录、
+   `recover.c:stfs_journal_ledger_probe()`），但**没有**：只读抢救挂载（尽最大可能读出、跳过坏块并记录、
    继续扫描）、元数据优先、尽力导出。`stfs_journal_recover_region`
-   （`test_bad_cluster_input.c:324-466` 用它做「整片不可读 ⇒ 只丢该片」的标定）
+   （`test_bad_cluster_input.c:bi_test_ac50_11_input_side()` 用它做「整片不可读 ⇒ 只丢该片」的标定）
    是最接近的构件，但它是**区域级**诊断，不是抢救导出。
 3. **坏块跳过 + 记录 + 继续扫描的导出一级能力**：`st_repair_read_error`
-   （`storage.c:864-899`）做了「跳过并继续」，但它**清零后写回**——
+   （`storage.c:st_repair_read_error()`）做了「跳过并继续」，但它**清零后写回**——
    对抢救场景这是**破坏性的**（会把抢救中的原始坏区内容抹成 0）。
    ⇒ 抢救模式需要一条**不改介质**的只读跳过路径。
 
@@ -443,10 +443,10 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 >
 > - **检测**：数据簇与元数据结构的 CRC 由文件系统在每次写时封、每次读时校验；
 >   不一致时返回 `STFS_ERR_CORRUPT` 并给出精确的簇/LBA 与期望/实际校验值。
-> - **隔离**：坏簇被逐簇裁决（`stfs_st_cluster_is_bad`，`stfs_block_alloc.h:573`、`:624`）
+> - **隔离**：坏簇被逐簇裁决（`stfs_st_cluster_is_bad`，`stfs_block_alloc.h`「批 70-F」权属注释、`stfs_block_alloc.h:stfs_blk_bad_query_fn`（R2 坏道判据））
 >   并在分配时避开；「查不到」是显式第三态，**不猜**。
-> - **诚实失败**：不确定即报不确定（`STFS_ERR_INTEGRITY_UNCERTAIN`，`txn.c:299-305`），
->   绝不伪造成功；降级必须显式同意（`recover.c:113-116`）。
+> - **诚实失败**：不确定即报不确定（`STFS_ERR_INTEGRITY_UNCERTAIN`，`txn.c:stfs_meta_txn_commit()`），
+>   绝不伪造成功；降级必须显式同意（`recover.c:stfs_journal_ledger_probe()`）。
 > - **抢救**：在介质危险状态下以只读方式尽量导出数据，元数据优先，
 >   坏区跳过并记录，**不写回、不覆盖**。
 > - **介质冗余不在文件系统内**：单份介质损坏只能检测、不能修复；修复依赖低层 RAID
@@ -479,13 +479,13 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
   宽度由头前缀的 `entry_stride` 自描述（`entry_stride /* +28 父日志条目宽度（v1 = 9；
   自描述便于将来加宽） */`，`stfs_journal_layout.h:stfs_journal_head_prefix_t.entry_stride`；B7 宽化后实测为 13，B9 再宽化为 15）。
   ⇒ 与 4 KiB 簇一致性核对：内联容量 263 = `(head_bytes − entry_area_off − CRC尾 4) / 15`
-  = `(4088 − 128 − 4)/15`，测试断言 `entry_capacity == 263`（`test_main.c:764`），
-  溢出簇每簇 272 条，`entry_area_clusters = 2` 时总数 535（`test_main.c:1102`）。
+  = `(4088 − 128 − 4)/15`，测试断言 `entry_capacity == 263`（`test_main.c:test_ac50_2_head_self_verify()`），
+  溢出簇每簇 272 条，`entry_area_clusters = 2` 时总数 535（`test_main.c:test_extra_boundaries()`）。
   （B9 `e3afefa` 前按 stride 13 为 `(4096 − 128 − 4)/13 = 304`、每簇 314、总数 618。）
   `【已实现事实】`
 - **文件标识：条目内没有。** 身份在**区域级**而非记录级——头前缀带
-  `folder_id @+8`、`parent_folder_id @+12`、`parent_slot @+16`（`:233-254`），
-  即「哪个日志区 = 哪个文件夹/主体」。父条目只记**子区域起始簇**（`:196-197`、`INV-10`）。
+  `folder_id @+8`、`parent_folder_id @+12`、`parent_slot @+16`（`stfs_journal_layout.h:stfs_journal_head_prefix_t`），
+  即「哪个日志区 = 哪个文件夹/主体」。父条目只记**子区域起始簇**（`stfs_journal_layout.h:stfs_journal_parent_entry_t.child_cluster`、`INV-10`）。
   ⇒ **若 CRC 记录要能报出「是哪个文件失败」，要么依赖「记录落在该文件的区域里」
   这一区域级归属，要么必须在条目里新增文件标识字段（当前没有）。** `【已实现事实】`
 - **可挂 CRC 的字段 / 扩展位**：
@@ -505,7 +505,7 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 - **追加一条记录的实际字节数 N**：
   - **逻辑占用 N = 15 B/条**（若保持现有 `entry_stride`；B9 `e3afefa` 前为 13 B）；
     若按「完整 CRC32C」加宽 stride，则 **N = 19 B/条**（B9 `e3afefa` 前为 17 B/条）。 `【理论推断】`
-  - **物理代价与 N 无关，才是重点**：`journal.h:304` 明说
+  - **物理代价与 N 无关，才是重点**：`journal.h:stfs_journal_entry_append()` 明说
     「追加一条父日志条目（读改写头记录 = **1 次头读 + 1 次头写**；溢出段另加 2 次簇 IO）」。
     ⇒ **追加 1 条 15 B 记录要搬运整个头簇（4 KiB）**，写放大 ≈ `4096/15 ≈ 273×`（B9 `e3afefa` 前为 13 B / ≈315×）；
     M 条记录 ⇒ **O(M) 次簇 IO，无批处理**。`【已实现事实】`
@@ -515,22 +515,22 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 - **没有全局上限，只有「每区域」上限。** 头前缀有 `entry_capacity @+32` /
   `entry_count @+36`（`stfs_journal_layout.h:stfs_journal_head_prefix_t.entry_capacity/entry_count`），且**容量不是自由字段**：必须等于由
   `entry_area_off`/`entry_stride`/`head_bytes` 推出的值，否则判 `STFS_ERR_CORRUPT`
-  （`journal_layout.c:209`「容量必须等于由边界字段推出的值，不许自说自话」）。
+  （`journal_layout.c:jr_prefix_consistent()`「容量必须等于由边界字段推出的值，不许自说自话」）。
   ⇒ 容量在**建区时定死**，全卷没有一份「日志总量」账目。`【已实现事实】`
-- **写满 = 拒绝追加，不覆盖、不轮转。** `journal.h:305`：
+- **写满 = 拒绝追加，不覆盖、不轮转。** `journal.h:stfs_journal_entry_append()`：
   「**本函数不分配空间**：容量在建区时定死，用满即 `STFS_ERR_JOURNAL_FULL`」；
   测试独立钉住：填满到上限 `STFS_OK`，再追加即 `STFS_ERR_JOURNAL_FULL`
-  （`test_main.c:1074-1083`，并注明「**不偷偷扩容**：分配不是本包的事」）。
+  （`test_main.c:test_extra_boundaries()`，并注明「**不偷偷扩容**：分配不是本包的事」）。
   `【已实现事实】`
 - **「轮转」在代码里指『新区域的物理落位分散』，不是日志轮转/淘汰。**
-  `journal.h:386-391` 分工：包 70 拥有空闲池，包 50 只拥有**落位规则**；
-  `journal_alloc.c:259`「按区域轮转：从 cursor 指定的区域开始，逐个区域试」，
+  `journal.h:stfs_journal_plan_alloc()` 分工：包 70 拥有空闲池，包 50 只拥有**落位规则**；
+  `journal_alloc.c:stfs_journal_plan_alloc()`「按区域轮转：从 cursor 指定的区域开始，逐个区域试」，
   受 `STFS_JOURNAL_ISOLATION_MIN_CLUSTERS 1`（`stfs_journal_layout.h:STFS_JOURNAL_ISOLATION_MIN_CLUSTERS`）约束。
-  `test_alloc_seq.c:386`、`test_main.c:1319` 断言的正是**落位轮转**。
+  `test_alloc_seq.c:sq_test_ac50_4_plan_on_real_pool()`、`test_main.c:test_ac50_4_scatter_and_gap()` 断言的正是**落位轮转**。
   `【已实现事实】`
-- 「覆盖最旧」在代码里**只有内存先例**，不在盘上：`checkpoint.c:114`
+- 「覆盖最旧」在代码里**只有内存先例**，不在盘上：`checkpoint.c:ck_lookup()`
   固定容量状态表满时 `spare = &g_ck[0]; /* 表满：覆盖最旧的一格（固定容量，绝不分配） */`；
-  `recover_shard.c:306`、`layer.c:294` 的「上限」是**如实回报到什么程度**的截断，
+  `recover_shard.c:rs_note_kept()`、`layer.c:stfs_journal_window_commit()` 的「上限」是**如实回报到什么程度**的截断，
   不是淘汰。`【已实现事实】`
 - **⇒ 人类口径中唯一未规定的一点（跨文件淘汰顺序）当前做不了，缺三样东西**：
   1. **全局记账缺失**：没有「所有文件 CRC 记录总量」的账目，也没有「某文件占了多少字节」
@@ -568,7 +568,7 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
   1. **区域粒度爆点（决定性）**：每份文件的 CRC 记录要放在「该文件所属的日志」里，
      而**每个日志区至少 1 个头簇 + 与相邻日志区 ≥1 簇隔离带**
      （`STFS_JOURNAL_ISOLATION_MIN_CLUSTERS 1`，`stfs_journal_layout.h:STFS_JOURNAL_ISOLATION_MIN_CLUSTERS`；
-     `journal.h:387-389`；`test_main.c:1335-1359` 断言隔离带）。
+     `journal.h:stfs_journal_plan_alloc()`；`test_main.c:test_ac50_4_scatter_and_gap()` 断言隔离带）。
      **4 KiB 簇下每个文件最小日志代价 = 2 簇 = 8 KiB。**
      ⇒ 100 万个 200 B 的小文件：字节预算合计仅 50 MB 级，
      但日志区合计 **≥ 8 GiB**。 **5% 的字节预算根本不是约束，簇粒度才是。**
@@ -588,7 +588,7 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
      > 上式 `1.78 × 10⁷ 条` 是现行 stride 15 下的对照重算，现行上界为 u32（`≤ 4294967295` 簇）。
 - `【缺证据】` 单个日志区在**卷几何上**能否长到几十 MiB / 256 MiB，
   取决于 pkg 50 落位规则与卷几何的联合限制
-  （`stfs_journal_plan_alloc` 的边界校验在 `journal.h:760-778`，本次未逐条核算）。
+  （`journal.h:stfs_journal_plan_alloc()` 的边界校验，本次未逐条核算）。
 
 ### 7.4 落地成本与判据
 
@@ -596,12 +596,12 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 
 | 文件 | 改动 |
 |---|---|
-| `50-日志体系与恢复\stfs_journal_layout.h` | 新增记录种类：加宽 `entry_stride`（15→19；B9 `e3afefa` 前为 13）或新增条目结构；扩展 `STFS_JOURNAL_ENTRY_TYPE_*` 三值语义与静态断言（`:155-157`、`:413-418`、`:367`）；若用扩展位则在头前缀尾部追加记账字段（`:266-267`） |
-| `50-日志体系与恢复\journal_layout.c` | append/verify/parse 适配可变 stride；头记录 CRC 重算路径（`:407`）；容量推导（`:209`、`:151`、`:263-267`） |
+| `50-日志体系与恢复\stfs_journal_layout.h` | 新增记录种类：加宽 `entry_stride`（15→19；B9 `e3afefa` 前为 13）或新增条目结构；扩展 `STFS_JOURNAL_ENTRY_TYPE_*` 三值语义与静态断言（`stfs_journal_layout.h:STFS_JOURNAL_ENTRY_TYPE_*`、`stfs_journal_layout.h:STFS_STATIC_ASSERT`、`stfs_journal_layout.h:stfs_journal_entry_type_valid()`）；若用扩展位则在头前缀尾部追加记账字段（`stfs_journal_layout.h:stfs_journal_head_prefix_t.reserved1` / `.reserved2`） |
+| `50-日志体系与恢复\journal_layout.c` | append/verify/parse 适配可变 stride；头记录 CRC 重算路径（`journal_layout.c:stfs_journal_head_patch_layer()`）；容量推导（`journal_layout.c:jr_prefix_consistent()`、`journal_layout.c:jr_derived_capacity()`、`journal_layout.c:stfs_journal_head_init()`） |
 | `50-日志体系与恢复\journal.h` / `journal.c` | **新增删除/截断/丢弃最旧记录**的接口与实现（当前不存在）；`stfs_journal_entry_append` 的写放大治理（批处理或专用追加区） |
-| `50-日志体系与恢复\checkpoint.c` | 重放**有意不解释载荷**（`:14`）⇒ CRC 记录对重放不可见；若要求「从日志重建元数据」须在此教会重放理解新记录 |
+| `50-日志体系与恢复\checkpoint.c` | 重放**有意不解释载荷**（`checkpoint.c` 文件头注释第 3 条）⇒ CRC 记录对重放不可见；若要求「从日志重建元数据」须在此教会重放理解新记录 |
 | 配额裁决者（新增职责） | 全局/跨文件淘汰顺序与账目 —— **当前无归属** |
-| `50-日志体系与恢复\test\test_main.c` | 硬编码的内联容量/总容量断言随 stride 变化必须改：**现为 263 / 535**（`:764`、`:1065-1068`、`:1102`）；B9 `e3afefa` 前为 304 / 618（`:723`、`:1024`、`:1058`） |
+| `50-日志体系与恢复\test\test_main.c` | 硬编码的内联容量/总容量断言随 stride 变化必须改：**现为 263 / 535**（`test_main.c:test_ac50_2_head_self_verify()` 的 `stfs_journal_head_prefix_t.entry_capacity == 263` 断言、`test_main.c:test_extra_boundaries()` 的 `stfs_journal_inline_capacity()`（=263）与 `stfs_journal_head_prefix_t.entry_capacity == 535` 断言）；B9 `e3afefa` 前为 304 / 618（B9 前旧行号 `:723`、`:1024`、`:1058`，不可对应现行文件） |
 
 **是否改盘上格式（版本仍 = 1）**
 
@@ -614,17 +614,17 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 - **代价与风险**：① 静态断言与 `type <= TYPE_PROGRAM` 判断必须同步改
   （`stfs_journal_layout.h:stfs_journal_entry_type_valid()`、`STFS_JOURNAL_ENTRY_TYPE_*` 静态断言），否则「三值语义」被破坏；
   ② 所有消费者必须**按字段读**而非按 13/9 常量读 —— 而代码里已存在常量硬编码
-  （`test_main.c:1024` 的注释文字曾是 9 B 时代的「439」，与实际 304 不符；B9 `e3afefa`
-  宽化后该处注释与断言已同步为 263 / 535，见 `test_main.c:764`、`:1102`），
+  （`test_main.c:test_ac50_9_ledger_degrade_reported()` 的注释文字曾是 9 B 时代的「439」，与实际 304 不符；B9 `e3afefa`
+  宽化后该处注释与断言已同步为 263 / 535，见 `test_main.c:test_ac50_2_head_self_verify()`、`test_main.c:test_extra_boundaries()`），
   说明**常量漂移已经发生过一次**，这是可证的风险信号。`【已实现事实】`
 
 **三条判据的当前状态**
 
 | 判据 | 当前状态 | 依据 |
 |---|---|---|
-| ① 翻转数据块内 1 字节 ⇒ 能**定位**到块/文件 | **今天已满足**（无需日志 CRC 记录）。翻转任一数据簇载荷 ⇒ 簇头 CRC32C 失配 ⇒ 返回 `bad_lba`/`bad_cluster`/`crc_expected`/`crc_actual` + `STFS_ERR_CORRUPT`，并计入 `crc_failures`；文件层读默认校验 | `storage.c:838-846`、`:1390`；`file.c:348/556/1554`；`stfs_storage_layout.h:102-105` |
-| ② 文件级 CRC 能报出**是哪个文件**失败 | **不具备**。今天只能给到**簇/LBA 级**；归属到文件靠调用方上下文（file.c 的读路径），**盘上没有持久的文件级完整性记录**。⇒ 正是日志 CRC 记录方案的价值所在 | §7.1「条目内没有文件标识」；`storage.c:838-846` |
-| ③ **从日志重建元数据**可复现（有无现成测试/探针） | **不具备，且是硬缺口。** 无重放实现：`recover.c:19-22` 明确列出**未做**「日志重放到最终状态」（理由：需 70/90 的载荷语义）、「碎片区备份降级」「检查点执行」；`checkpoint.c:14`「重放不解释载荷」；`stfs_journal_replay_timed`（`checkpoint.c:516`）只读+校验+计数；`FREEZE.md:210` 记 `AC-50.10` = **未具备**、`FREEZE.md:104` 记恢复重放未做。⇒ **既无测试也无探针可复现「从日志重建元数据」**；缺的是重放语义（谁解释载荷）与 70/90 的载荷契约 | `recover.c:19-22`；`checkpoint.c:14`、`:516`；`FREEZE.md:210`、`:104` |
+| ① 翻转数据块内 1 字节 ⇒ 能**定位**到块/文件 | **今天已满足**（无需日志 CRC 记录）。翻转任一数据簇载荷 ⇒ 簇头 CRC32C 失配 ⇒ 返回 `bad_lba`/`bad_cluster`/`crc_expected`/`crc_actual` + `STFS_ERR_CORRUPT`，并计入 `crc_failures`；文件层读默认校验 | `storage.c:st_load_cluster()`、`storage.c:stfs_st_cluster_write_headed()`；`file.c:file_block_read_hdr()/file_reader_read()/file_map_load()`；`stfs_storage_layout.h:stfs_storage_cluster_head_t` |
+| ② 文件级 CRC 能报出**是哪个文件**失败 | **不具备**。今天只能给到**簇/LBA 级**；归属到文件靠调用方上下文（file.c 的读路径），**盘上没有持久的文件级完整性记录**。⇒ 正是日志 CRC 记录方案的价值所在 | §7.1「条目内没有文件标识」；`storage.c:st_load_cluster()` |
+| ③ **从日志重建元数据**可复现（有无现成测试/探针） | **不具备，且是硬缺口。** 无重放实现：`recover.c` 文件头注释（「本批不做」三条）明确列出**未做**「日志重放到最终状态」（理由：需 70/90 的载荷语义）、「碎片区备份降级」「检查点执行」；`checkpoint.c` 文件头注释第 3 条「重放不解释载荷」；`checkpoint.c:stfs_journal_replay_timed()` 只读+校验+计数；`FREEZE.md` 的 `AC-50.10` 行为 **未具备**、`FREEZE.md`「本批不做」表「**恢复重放**」行记恢复重放未做。⇒ **既无测试也无探针可复现「从日志重建元数据」**；缺的是重放语义（谁解释载荷）与 70/90 的载荷契约 | `recover.c` 文件头注释；`checkpoint.c` 文件头注释第 3 条、`checkpoint.c:stfs_journal_replay_timed()`；`FREEZE.md` 的 `AC-50.10` 行、`FREEZE.md`「本批不做」表「**恢复重放**」行 |
 
 **⇒ 本节结论**：
 (a) 「检测」不需要日志 CRC 记录 —— 数据簇检测今天已经具备（判据①）；
@@ -642,13 +642,13 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 - 空间：**+8 B / 簇 = 4 KiB 簇的 0.195%**；64 KiB 簇为 0.012%。
   1 GiB 文件（4 KiB 簇，262144 簇）⇒ **+2 MiB**。`【理论推断】`
 - 现状契合度：**高**。簇头已是整簇载荷 CRC 的落点
-  （`stfs_storage_layout.h:102-105`，`sizeof == 8` 有静态断言 `:292`）；
-  写时封（`storage.c:1390`）、读时校（`:838`）两条路径都已存在，扩字段是**同一条路径加宽**。
+  （`stfs_storage_layout.h:stfs_storage_cluster_head_t`，`sizeof == 8` 有 `stfs_storage_layout.h:STFS_STATIC_ASSERT` 锁定）；
+  写时封（`storage.c:stfs_st_cluster_write_headed()`）、读时校（`storage.c:st_load_cluster()`）两条路径都已存在，扩字段是**同一条路径加宽**。
 - 代价：**必须改盘上布局**；`STFS_STORAGE_CLUSTER_HEAD_BYTES` 与
-  `offsetof(flags) == 4` 等静态断言（`stfs_storage_layout.h:288-294`）随之改；
+  `offsetof(flags) == 4` 等静态断言（`stfs_storage_layout.h:STFS_STATIC_ASSERT`）随之改；
   所有簇头消费者受影响。但**不引入第二份需要保持一致的元数据结构**，
   符合「一条规则只有一个实现点」（`10-公共约定` §14.4 的口径，
-  `journal_layout.h:263-264` 明确引用）。
+  `stfs_journal_layout.h:STFS_JOURNAL_INLINE_CAPACITY`（锚点：说明 `STFS_JOURNAL_INLINE_CAPACITY` 的 §4 注释；**非 §14.4**）明确引用）。
 - 注意：现有 CRC 覆盖 `[8, cluster_size)`，**簇头自身（含 `flags`）不被覆盖**
   ⇒ 扩到 16 B 时应明确新 CRC 是否覆盖前 12 B（否则头字段本身仍不可校验）。
   （本行讨论的是**存储簇头** `STFS_STORAGE_CLUSTER_HEAD_BYTES` 8 → 16 B 的扩字段方案，
@@ -663,7 +663,7 @@ GPT 镜像外）、**提交链内部无屏障**、**无在线 scrub/自愈**，�
 - 代价：**要新建并维护一张覆盖全部簇的表** ⇒ 需要自己的 COW/原子提交路径、
   自己的空间分配、自己的「表与数据一致性」校验；与 §2.4 的结论叠加后，
   **这张表本身会成为新的单点**（它只有单份，不可修复）。
-  且它**与 pkg 50 不碰 pkg 30 簇头的既有边界（`stfs_journal_layout.h:46`、`INV-4`）
+  且它**与 pkg 50 不碰 pkg 30 簇头的既有边界（`stfs_journal_layout.h` 文件头注释、`INV-4`）
   相冲突**——需要跨包改写契约。`【已实现事实】`
 - 优点：**不动簇头**，对已有盘上几何零影响。
 
